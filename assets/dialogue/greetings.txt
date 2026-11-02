@@ -1,0 +1,70 @@
+# Encounter greetings — the greeting is the tell for each temperament.
+#
+# Format: a [section] per person kind + temperament, then one greeting per line.
+# A greeting is 1 or 2 screen lines separated by " / ". Each screen line is at
+# most 12 characters (the text kernel's width): A-Z 0-9 space . , ! ? - $ % ' / : +
+# The first greeting in each section is the author's original; the rest are variants.
+
+[homeless.calm_rational]
+WHAT'S UP?
+HEY. NEW IN / TOWN, HUH?
+YOU LOOK / LOST, BUDDY.
+EVENING. / WHAT'S UP?
+
+[homeless.calm_irrational]
+PIGEONS KNOW / THE SCORE.
+SHH. THE SKY / IS LISTENING
+MOON OWES ME / TWELVE BUCKS
+MY SHOES SAY / YOU'RE OKAY.
+
+[homeless.angry_rational]
+THE FUCK YOU / WANT?
+WHO SENT YA? / TALK FAST.
+WHAT. SAY IT / OR SCRAM.
+YOU GOT A / PROBLEM?
+
+[homeless.angry_irrational]
+THEY STOLE / MY IDEA!
+TRY ME! I'LL / CUT YOU!
+BACK OFF MY / CART! BACK!
+YOU'RE ONE / OF THEM!
+
+[police.calm]
+HOW CAN I / HELP?
+EVENING. / PROBLEM?
+EVERYTHING / ALL RIGHT?
+
+[police.less_calm]
+WHAT?
+YEAH? WHAT / IS IT?
+MAKE IT / QUICK.
+
+[police.angry]
+NO TIME FOR / YOUR SHIT!
+NOT NOW. I / MEAN IT.
+KEEP MOVING, / PAL.
+
+[police.really_angry]
+JUST GIVE ME / AN EXCUSE!
+TRY ME, / SCUZZBAG.
+GO ON. MAKE / MY DAY, BUM.
+
+[passerby.patient]
+DO YOU NEED / HELP?
+OH! ARE YOU / OKAY?
+HI. CAN I / HELP YOU?
+
+[passerby.less_patient]
+WHAT IS IT?
+YES? WHAT?
+MAKE IT / QUICK, OKAY?
+
+[passerby.impatient]
+NO TIME FOR / YOU.
+UGH. WHAT? I / HAVE A TRAIN
+NOT TODAY, / SORRY.
+
+[passerby.angry_impatient]
+FUCK OFF!
+GET AWAY / FROM ME!
+DON'T TOUCH / ME, FREAK!
