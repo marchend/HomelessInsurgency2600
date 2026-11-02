@@ -30,6 +30,7 @@ NO_PERSON = 0xFF
 SLOT_Y = [67, 50, 34, 16, 1]
 ALLEY_SLOTS = (0, 2, 4)       # slots inside building bands (index into the room's bands)
 ITEM_COUNT = 3                # weapons lying around the city (one of each)
+FOLLOWER_ROWS = 6             # rows of the follower figures below the player
 
 
 def col(hl):
@@ -92,6 +93,13 @@ class Asm:
             self.lines.append("    ALIGN 256")
         self.label(name)
         self.bytes(values)
+
+    def exprs(self, name, exprs, per_line=8):
+        """A table of assembler expressions (e.g. "<Label"), short lines for DASM."""
+        self.label(name)
+        exprs = list(exprs)
+        for i in range(0, len(exprs), per_line):
+            self.lines.append("    .byte " + ",".join(exprs[i:i + per_line]))
 
     def equ(self, name, value):
         self.lines.append(f"{name} = {value}")
@@ -173,22 +181,15 @@ def place_items(patterns, rooms, start, placed):
 
 def build_bank0(patterns, rooms, start, placed, items):
     a = Asm("bank 0 data")
-    hi, lo = font_tables()
-    a.table("FontHi", hi)
-    a.table("FontLo", lo)
-    a.comment("glyph offsets (character code * 5), as the composer wants them")
-    for name, ch in (("SPACE", " "), ("0", "0"), ("DOLLAR", "$"), ("DOT", "."),
-                     ("SLASH", "/"), ("QUESTION", "?")):
-        a.equ(f"GLYPH_{name}", CHARSET.index(ch) * 5)
-    for name, s in (("StrAct1", "ACT I: RALLY"), ("StrPressFire", "PRESS FIRE")):
-        a.table(name, glyphs(s))
-    # fight footer: "WEAPN CREW N" - weapon names, 5 glyphs each, then "CREW "
-    names = []
-    for wname, _ in outcomes.WEAPONS:
-        assert len(wname) <= 5, wname
-        names += glyphs(wname, 5, center=False)
-    a.table("WeaponGlyphs", names)
-    a.table("CrewGlyphs", glyphs(" CREW ", 6, center=False))
+    # player sprite per follower count 0-5 (bank 1): graphics, colors, NUSIZ0
+    variants = ["Player", "PlayerF", "PlayerF", "PlayerF", "PlayerP", "PlayerP"]
+    colors = ["Player"] + ["PlayerF"] * 5
+    nusiz = ["Nus0", "Nus0", "Nus1", "Nus3", "Nus1", "Nus3"]
+    for label, names in (("P0Gfx", [f"{v}Gfx" for v in variants]),
+                         ("P0Col", [f"{c}Col" for c in colors]),
+                         ("P0Nus", nusiz)):
+        a.exprs(label + "Lo", (f"<{n}" for n in names))
+        a.exprs(label + "Hi", (f">{n}" for n in names))
 
     # building band patterns
     names = sorted(patterns)
@@ -232,14 +233,10 @@ def build_bank0(patterns, rooms, start, placed, items):
 
     # sprite base addresses per slot kind (see KIND_* in ram.h); signs, people
     kinds = ["Blank", "Shelter", "Food", "Homeless", "Police", "Passerby", "Item"]
-    a.label("KindGfxLo")
-    a.lines.append("    .byte " + ",".join(f"<{k}Gfx" for k in kinds))
-    a.label("KindGfxHi")
-    a.lines.append("    .byte " + ",".join(f">{k}Gfx" for k in kinds))
-    a.label("KindColLo")
-    a.lines.append("    .byte " + ",".join(f"<{k}Col" for k in kinds))
-    a.label("KindColHi")
-    a.lines.append("    .byte " + ",".join(f">{k}Col" for k in kinds))
+    a.exprs("KindGfxLo", (f"<{k}Gfx" for k in kinds))
+    a.exprs("KindGfxHi", (f">{k}Gfx" for k in kinds))
+    a.exprs("KindColLo", (f"<{k}Col" for k in kinds))
+    a.exprs("KindColHi", (f">{k}Col" for k in kinds))
 
     a.equ("START_ROOM", start[0] * 8 + start[1])
     # roof colors per (map row + band) & 7: brick, concrete, teal, slate...
@@ -294,11 +291,40 @@ def build_bank1():
         a.table(f"{name}Gfx", gfx)
         a.equ(f"{name.upper()}_H", len(gfx))
         a.bytes([0] * SPRITE_PAD)
+    # the player with a row of followers below (one figure, or pairs)
+    lead = FOLLOWER_ROWS + 1                     # follower rows + a gap row
+    with_followers = []
+    for name, row_art in (("PlayerF", sprites.FOLLOWER_TOP), ("PlayerP", sprites.FOLLOWER_PAIR_TOP)):
+        art = sprites.PLAYER_TOP + ["........"] + row_art
+        colors = dict(sprites.PLAYER_COLORS)
+        colors.update({"h": sprites.FOLLOWER_COLORS["H"], "s": sprites.FOLLOWER_COLORS["S"],
+                       "c": sprites.FOLLOWER_COLORS["C"]})
+        art = sprites.PLAYER_TOP + ["........"] + [r.lower() for r in row_art]
+        with_followers.append((name, art, colors))
+        gfx, _ = sprite_rows(art, colors)
+        a.bytes(gfx[:lead])                      # followers sit below the player's
+        a.label(f"{name}Gfx")                    # bottom row, which the label marks
+        a.bytes(gfx[lead:])
+        a.bytes([0] * SPRITE_PAD)
     a.label("ColStart")
     a.bytes([0] * SPRITE_PAD)
     for name, art, colors in city:
         _, cols = sprite_rows(art, colors)
         a.table(f"{name}Col", cols)
+        a.bytes([0] * SPRITE_PAD)
+    name, art, colors = with_followers[0]
+    _, cols = sprite_rows(art, colors)
+    a.bytes(cols[:lead])
+    a.label("PlayerFCol")
+    a.bytes(cols[lead:])
+    a.bytes([0] * SPRITE_PAD)
+    # NUSIZ0 per row: copies on the follower rows only
+    a.label("NusStart")
+    a.bytes([0] * SPRITE_PAD)
+    a.equ("Nus0", "NusStart+40")
+    for copies in (1, 3):
+        a.bytes([copies] * FOLLOWER_ROWS + [0])
+        a.label(f"Nus{copies}")
         a.bytes([0] * SPRITE_PAD)
     # an empty slot points into the middle of the leading zero pad, so any
     # slot's line range reads zeros
@@ -393,7 +419,7 @@ def scene_rows(kind):
         bk, pfc, half = 0, 0, "." * 20
         if i == SCENE_PAIRS - 1:
             bk = col((0, 3))                                  # sidewalk
-        elif kind == "homeless":                              # brick alley wall
+        elif kind in ("homeless", "collapse", "crew", "won"):  # brick alley wall
             course = i // 3
             if i % 3 == 2:
                 bk = col((3, 3))                              # mortar
@@ -432,12 +458,13 @@ def build_bank2():
             regs.append(row_to_pf([ch == "#" for ch in row]))
     for i, name in enumerate(("HdrPF0L", "HdrPF1L", "HdrPF2L", "HdrPF0R", "HdrPF1R", "HdrPF2R")):
         a.table(name, [r[i] for r in regs])
-    a.table("HdrColor", [col(c) for c in [(0, 5), (9, 5), (12, 5), (2, 6), (0, 4)]])
+    a.table("HdrColor", [col(c) for c in [(0, 5), (9, 5), (12, 5), (2, 6), (0, 4),
+                                          (4, 4), (2, 6), (1, 6)]])
 
     scenes = [scene_rows(k) for k in build_dialogue.SCREEN_KINDS]
     for i, name in enumerate(("SceneBK", "ScenePFC", "ScenePF0", "ScenePF1", "ScenePF2")):
         a.table(name, [r[i] for sc in scenes for r in sc])
-    a.table("SceneCtrl", [0, 0, 1, 1, 0])    # shop windows are mirrored
+    a.table("SceneCtrl", [0, 0, 1, 1, 0, 0, 0, 0])    # shop windows are mirrored
     a.equ("SCENE_PAIRS", SCENE_PAIRS)
 
     portraits = [
@@ -471,10 +498,8 @@ def build_bank3(d):
     for sid in range(len(strings.lines)):
         a.comment(f"{sid}: '{strings.lines[sid]}'")
         a.table(f"Str{sid}", strings.glyph_offsets(sid))
-    a.label("StrLo")
-    a.lines.append("    .byte " + ",".join(f"<Str{i}" for i in range(len(strings.lines))))
-    a.label("StrHi")
-    a.lines.append("    .byte " + ",".join(f">Str{i}" for i in range(len(strings.lines))))
+    a.exprs("StrLo", (f"<Str{i}" for i in range(len(strings.lines))))
+    a.exprs("StrHi", (f">Str{i}" for i in range(len(strings.lines))))
     a.save("bank3_data.asm")
 
 
@@ -490,7 +515,7 @@ def build_bank5(d):
     a.table("GreetLine1", g["line1"])
     a.table("GreetLine2", g["line2"])
     tab, counts = [], []
-    for kind in build_dialogue.KINDS + ["food"]:
+    for kind in build_dialogue.KINDS + ["food", "round2"]:
         ids = d["choices"][kind]
         counts.append(len(ids))
         tab += ids + [0] * (4 - len(ids))
@@ -509,6 +534,15 @@ def build_bank5(d):
                       ("money_lo", "OutMoneyLo"), ("energy", "OutEnergy"), ("heat", "OutHeat"),
                       ("flags", "OutFlags")):
         a.table(name, o[key])
+    rec = d["recruit"]
+    a.table("RecruitOpener", rec["opener"])
+    a.table("RecruitAnswer", rec["answer"])
+    a.table("RecruitQ1", rec["q1"])
+    a.table("RecruitQ2", rec["q2"])
+    a.table("RecruitNo1", rec["no1"])
+    a.table("RecruitNo2", rec["no2"])
+    a.table("ShelterRooms", d["shelter_rooms"])
+    a.table("PersonShelter", d["person_shelter"])
     f = d["food"]
     a.table("FoodPriceHi", f["price_hi"])
     a.table("FoodPriceLo", f["price_lo"])
@@ -580,6 +614,44 @@ def build_bank4():
     a.save("bank4_data.asm")
 
 
+# ---------------------------------------------------------------------------
+# bank 7: HUD / title / fight footer text, sound effects
+# ---------------------------------------------------------------------------
+
+def build_bank7():
+    a = Asm("bank 7 data")
+    hi, lo = font_tables()
+    a.table("FontHi", hi)
+    a.table("FontLo", lo)
+    a.comment("glyph offsets (character code * 5), as the composer wants them")
+    for name, ch in (("SPACE", " "), ("0", "0"), ("DOLLAR", "$"), ("DOT", "."),
+                     ("SLASH", "/"), ("QUESTION", "?")):
+        a.equ(f"GLYPH_{name}", CHARSET.index(ch) * 5)
+    for name, s in (("StrAct1", "ACT I: RALLY"), ("StrPressFire", "PRESS FIRE")):
+        a.table(name, glyphs(s))
+    names = []                    # fight footer: "WEAPN CREW N"
+    for wname, _ in outcomes.WEAPONS:
+        assert len(wname) <= 5, wname
+        names += glyphs(wname, 5, center=False)
+    a.table("WeaponGlyphs", names)
+    a.table("CrewGlyphs", glyphs(" CREW ", 6, center=False))
+    # sounds: SfxFirst[id] indexes the step tables; a step with 0 frames ends it
+    first, c, f, v, t = [0], [0], [0], [0], [0]      # id 0 = silence
+    for i, (name, steps) in enumerate(outcomes.SOUNDS.items(), 1):
+        a.equ(f"SFX_{name.upper()}", i)
+        first.append(len(c))
+        for tone, pitch, vol, frames in steps:
+            assert 0 < frames < 256 and 0 <= pitch < 32 and 0 <= vol < 16
+            c.append(tone); f.append(pitch); v.append(vol); t.append(frames)
+        c.append(0); f.append(0); v.append(0); t.append(0)
+    a.table("SfxFirst", first)
+    a.table("SfxTone", c)
+    a.table("SfxPitch", f)
+    a.table("SfxVol", v)
+    a.table("SfxFrames", t)
+    a.save("bank7_data.asm")
+
+
 def main():
     with open(os.path.join(ROOT, "assets", "rooms", "city.txt")) as f:
         patterns, rooms, start = parse_city(f.read())
@@ -591,8 +663,16 @@ def main():
     build_bank2()
     build_bank3(dialogue)
     build_bank4()
+    shelters = [i for i, r in enumerate(r for row in rooms for r in row) if r["sign"] == "S"]
+    assert len(shelters) == 4
+    dialogue["shelter_rooms"] = shelters
+    dialogue["person_shelter"] = [0xFF] * HOMELESS_COUNT
+    for (room, _slot), person in placed.items():
+        if room in shelters:
+            dialogue["person_shelter"][person] = shelters.index(room)
     build_bank5(dialogue)
     build_bank6()
+    build_bank7()
 
 
 if __name__ == "__main__":

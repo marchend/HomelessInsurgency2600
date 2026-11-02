@@ -133,7 +133,7 @@ The encounter header only says HOMELESS. The **greeting** is how the player work
 | Angry-rational | blunt, profane | `THE FUCK YOU` / `WANT?` | respect, directness, shared grievance | small talk, pity |
 | Angry-irrational | paranoid, threatening | `THEY STOLE` / `MY IDEA!` · `TRY ME! I'LL` / `CUT YOU!` | food, money, showing strength | arguing — may start a fight |
 
-A recruitment is 2–3 exchanges. Right answers raise trust; at the threshold they join. Wrong answers lower trust; at zero they refuse for the rest of the day (or fight, for angry-irrational).
+**As built (Stage D):** a recruitment is 2 exchanges in one conversation — the right opener for their type, then the right answer to the question they ask back. A wrong answer gets that type's refusal and ends the conversation; you can try again later. The answers and lines live in [assets/outcomes.py](../assets/outcomes.py) (`RECRUIT`).
 
 ### 5.3b Police and passerby temperaments
 

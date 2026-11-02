@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
 
 import build_dialogue  # noqa: E402
-from test_npcs import NpcTest  # noqa: E402
+from test_npcs import NpcHelpers  # noqa: E402
 from test_rom import RomCase, setUpModule  # noqa: E402,F401
 
 D = build_dialogue.build()
@@ -103,8 +103,7 @@ class OutcomeRollTest(RomCase):
         self.assertAlmostEqual(gives / 255, 0.05, delta=0.01)
 
 
-class EncounterFlowTest(NpcTest):
-    """Whole-game flows through the encounter and fight screens."""
+class FlowHelpers(NpcHelpers):
 
     def choose(self, index):
         for _ in range(index):
@@ -129,6 +128,17 @@ class EncounterFlowTest(NpcTest):
         self.frames(1, fire=True)
         self.frames(1)
         self.assertEqual(self.ram("encKind"), self.sym["ENC_FOOD"])
+
+    def start_fight(self, kind):
+        self.start_city()
+        self.talk_to_slot(1, kind=self.sym[kind])
+        self.atari.write_ram(self.sym["encTemp"], 3)     # angry: no easy way out
+        self.choose(3 if kind == "KIND_POLICE" else 1)  # ATTACK / ROB
+        self.assertEqual(self.ram("screen"), self.sym["SCREEN_FIGHT"])
+
+
+class EncounterFlowTest(FlowHelpers):
+    """Whole-game flows through the encounter and fight screens."""
 
     # --- food -------------------------------------------------------------------
     def test_no_money_no_food(self):
@@ -165,13 +175,6 @@ class EncounterFlowTest(NpcTest):
         self.assertEqual(self.ram("screen"), self.sym["SCREEN_CITY"])
 
     # --- fights -----------------------------------------------------------------
-    def start_fight(self, kind):
-        self.start_city()
-        self.talk_to_slot(1, kind=self.sym[kind])
-        self.atari.write_ram(self.sym["encTemp"], 3)     # angry: no easy way out
-        self.choose(3 if kind == "KIND_POLICE" else 1)  # ATTACK / ROB
-        self.assertEqual(self.ram("screen"), self.sym["SCREEN_FIGHT"])
-
     def test_losing_to_a_cop_means_jail(self):
         self.start_fight("KIND_POLICE")
         self.snapshot(self.frames(30), "fight_police")
@@ -249,7 +252,6 @@ class EncounterFlowTest(NpcTest):
         self.assertEqual(self.sc("SC_SLOT_KIND", 2), self.sym["KIND_NONE"])
 
 
-del NpcTest   # don't re-run the Stage B tests from this module
 
 
 if __name__ == "__main__":

@@ -19,15 +19,16 @@ CHARSET = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ.,!?-$%'/:+"
 
 # Encounter kinds in ROM order (ENC_* in ram.h).
 KINDS = ["homeless", "police", "passerby"]
-SCREEN_KINDS = KINDS + ["food", "jail"]
 TEMPERAMENTS = {
     "homeless": ["calm_rational", "calm_irrational", "angry_rational", "angry_irrational"],
     "police": ["calm", "less_calm", "angry", "really_angry"],
     "passerby": ["patient", "less_patient", "impatient", "angry_impatient"],
 }
 CHOICES = data.CHOICES
+SCREEN_KINDS = KINDS + ["food", "jail", "collapse", "crew", "won"]
 HEADERS = {"homeless": "HOMELESS", "police": "POLICE", "passerby": "PASSERBY",
-           "food": "FOOD", "jail": "JAIL"}
+           "food": "FOOD", "jail": "JAIL", "collapse": "OUT COLD", "crew": "CREW",
+           "won": "RALLIED"}
 
 FLAG_SHELTER, FLAG_OUTSKIRTS, FLAG_COMBAT, FLAG_LEAVE = 1, 2, 4, 8
 
@@ -80,6 +81,7 @@ def build():
     # choices per screen kind (food menu is kind 3)
     choice_ids = {kind: [strings.add(c, center=False) for c in CHOICES[kind]] for kind in KINDS}
     choice_ids["food"] = [strings.add(m["choice"], center=False) for m in data.FOOD_MENU]
+    choice_ids["round2"] = [strings.add(c, center=False) for c in data.ROUND2_CHOICES]
     out["choices"] = choice_ids
 
     # outcomes: one row per kind * 4 + choice
@@ -88,10 +90,11 @@ def build():
     outs = {k: [] for k in ("l1", "l2", "money_hi", "money_lo", "energy", "heat", "flags")}
     for kind in KINDS:
         for ci in range(4):
+            leave = {"follower_shift": 0, "heat_shift": False, "outcomes": [data.LEAVE]}
             if ci >= len(CHOICES[kind]):
-                spec = {"follower_shift": 0, "heat_shift": False, "outcomes": [data.LEAVE]}
+                spec = leave
             else:
-                spec = data.OUTCOMES[(kind, CHOICES[kind][ci])]
+                spec = data.OUTCOMES.get((kind, CHOICES[kind][ci]), leave)
             items = spec["outcomes"]
             assert 1 <= len(items) <= 4 and items[-1]["odds"] is None, (kind, ci)
             rows["first"].append(len(outs["l1"]))
@@ -142,10 +145,11 @@ def build():
         food["price_hi"].append(hi)
         food["price_lo"].append(lo)
         food["energy"].append(m["energy"])
-    hi, lo = bcd(data.JAIL_FINE_CENTS)       # the jail fine shares the price table
-    food["price_hi"].append(hi)
-    food["price_lo"].append(lo)
-    food["energy"].append(0)
+    for cents in (data.JAIL_FINE_CENTS, data.SHARE_FOOD_CENTS, data.COLLAPSE_COST_CENTS):
+        hi, lo = bcd(cents)                     # other costs share the price table
+        food["price_hi"].append(hi)
+        food["price_lo"].append(lo)
+        food["energy"].append(0)
     out["food"] = food
     eq = out["equates"]
     eq["STR_FOOD_GREET1"] = strings.add(data.FOOD_GREETING[0])
@@ -159,6 +163,26 @@ def build():
         else:
             eq[f"STR_{name.upper()}1"] = strings.add(l1)
             eq[f"STR_{name.upper()}2"] = strings.add(l2)
+    # recruiting
+    rec = {"opener": [], "answer": [], "q1": [], "q2": [], "no1": [], "no2": []}
+    for r, temp in zip(data.RECRUIT, TEMPERAMENTS["homeless"]):
+        assert r["type"] == temp
+        rec["opener"].append(CHOICES["homeless"].index(r["opener"]))
+        rec["answer"].append(data.ROUND2_CHOICES.index(r["answer"]))
+        rec["q1"].append(strings.add(r["question"][0]))
+        rec["q2"].append(strings.add(r["question"][1]))
+        rec["no1"].append(strings.add(r["no"][0]))
+        rec["no2"].append(strings.add(r["no"][1]))
+    out["recruit"] = rec
+    for name, (l1, l2) in data.RECRUIT_LINES.items():
+        eq[f"STR_{name.upper()}1"] = strings.add(l1)
+        eq[f"STR_{name.upper()}2"] = strings.add(l2)
+    eq["SHARE_FOOD_INDEX"] = len(data.FOOD_MENU) + 1     # after the jail fine
+    for name in ("RECRUITS_TO_WIN", "PEOPLE_PER_FOLLOWER", "HUNGRY_AT", "DESERT_AT",
+                 "COLLAPSE_ENERGY"):
+        eq[name] = getattr(data, name)
+    eq["SHARE_FOOD_CHOICE"] = CHOICES["homeless"].index("SHARE FOOD")
+    eq["COLLAPSE_INDEX"] = len(data.FOOD_MENU) + 2
     for flag in ("SHELTER", "OUTSKIRTS", "COMBAT", "LEAVE"):
         eq[f"OUT_{flag}"] = globals()[f"FLAG_{flag}"]
     rob_hi, rob_lo = bcd(data.ROB_CASH_CENTS)

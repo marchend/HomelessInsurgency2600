@@ -78,3 +78,7 @@ PERSON_COLORS = {"A": c(15, 1), "S": SKIN_B, "G": c(12, 4), "L": c(0, 2),
 # A weapon lying in an alley: a pipe, bat or board (one look for all).
 ITEM_TOP = ["......W.", ".....W..", "....W...", "...W....", "..W.....", ".W......"]
 ITEM_COLORS = {"W": (0, 5)}
+
+# Two followers side by side in one 8-pixel row (used for 4-5 followers).
+FOLLOWER_PAIR_TOP = ["HH..HH..", "SS..SS..", "CCC.CCC.", "CCC.CCC.", ".C...C..",
+                     "C.C.C.C."]

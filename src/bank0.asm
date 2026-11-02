@@ -121,12 +121,14 @@ MainLoop
     lda pending
     beq .osScreen
     jsr HandlePending
-    jmp .osWait
+    jmp .osSound
 .osScreen
     lda screen
     cmp #SCREEN_CITY
-    bne .osWait
+    bne .osSound
     jsr CityOverscan
+.osSound
+    CALL_FAR 7, SoundTick
 .osWait
     lda INTIM
     bne .osWait
@@ -150,28 +152,27 @@ TitleInit
     SUBROUTINE
     lda #SCREEN_TITLE
     sta screen
-    lda #<StrPressFire  ; compose into TXT1, then copy it to TXT2
-    sta textPtr
-    lda #>StrPressFire
-    sta textPtr+1
-    jsr ComposeText
-    ldx #29
-.copy
-    lda SC_R+TXT1,x
-    sta SC_W+TXT2,x
+    ldx #HOMELESS_COUNT-1
+.unrecruit              ; a new game: nobody met or recruited yet (the title
+    lda SC_R+SC_PEOPLE,x ; rerolls their types while it waits for fire)
+    and #3
+    sta SC_W+SC_PEOPLE,x
     dex
-    bpl .copy
-    lda #<StrAct1
-    sta textPtr
-    lda #>StrAct1
-    sta textPtr+1
-    jsr ComposeText
+    bpl .unrecruit
+    lda #1
+    sta hudDirty        ; title text is composed in the title's VBLANK
     lda #0
     sta firePrev        ; "pressed": a button held at power-on must be released first
     rts
 
 TitleLogic
     SUBROUTINE
+    lda hudDirty
+    beq .composed
+    lda #0
+    sta hudDirty
+    CALL_FAR 7, ComposeTitle
+.composed
     ldx frame           ; reroll one homeless person's type per title frame,
 .mod40                  ; so the types depend on when the player presses fire
     cpx #HOMELESS_COUNT
@@ -232,6 +233,9 @@ CityInit
     sta itemsTaken
     sta shelters
     sta followers
+    sta SC_W+SC_KNOWN
+    sta SC_W+SC_HUNGER
+    sta SC_W+SC_SFX
     sta CXCLR
     lda #1
     sta hudDirty        ; composing text is too slow for VBLANK
@@ -278,6 +282,18 @@ CityLogic
     beq .warm
     dec heat
 .warm
+    lda energy          ; out of energy: collapse
+    bne .awake
+    CALL_FAR 5, Collapse
+    rts
+.awake
+    lda frame           ; every 256 frames the crew gets hungrier
+    bne .fed
+    CALL_FAR 5, CrewTick
+    lda screen
+    cmp #SCREEN_CITY
+    bne .done
+.fed
     jsr SetEnergyBar
     jsr SetSpritePointers
     jsr FirePressed     ; fire next to someone (or something) interacts
@@ -302,6 +318,8 @@ PickUp
     sta itemsTaken
     lda #KIND_NONE
     sta SC_W+SC_SLOT_KIND,x
+    lda #SFX_PICKUP
+    sta SC_W+SC_SFX
     rts
 
 ItemBit
@@ -500,8 +518,13 @@ HandlePending
     cmp #PENDING_FIGHT
     bne .notFight
     CALL_FAR 4, FightInit
-    jmp ComposeFightFooter
+    CALL_FAR 7, ComposeFightFooter
+    rts
 .notFight
+    cmp #PENDING_TITLE
+    bne .notTitle
+    jmp TitleInit
+.notTitle
     cmp #PENDING_TELEPORT
     bne .resume
     jsr LoadRoom
@@ -512,40 +535,6 @@ HandlePending
     sta screen
     jsr SetSpritePointers
     jmp SetSlotSprites  ; the encounter / fight reused the slot pointers
-
-; Fight footer "WEAPN CREW N" into TXT1 (the HUD is recomposed afterwards).
-ComposeFightFooter
-    SUBROUTINE
-    lda weapon
-    sta ttmp
-    asl
-    asl
-    adc ttmp            ; weapon * 5
-    tax
-    ldy #0
-.name
-    lda WeaponGlyphs,x
-    sta hudStr,y
-    inx
-    iny
-    cpy #5
-    bne .name
-    ldx #0
-.crew
-    lda CrewGlyphs,x
-    sta hudStr,y
-    inx
-    iny
-    cpx #6
-    bne .crew
-    lda followers
-    jsr DigitGlyph
-    sta hudStr+11
-    lda #<hudStr
-    sta textPtr
-    lda #>hudStr
-    sta textPtr+1
-    jmp ComposeText
 
 ; Overscan: the new room's NPCs (on a room change) or the HUD text (when it
 ; changed), then NPC movement and sprite setup for the next frame.
@@ -562,7 +551,7 @@ CityOverscan
     beq .sprites
     lda #0
     sta hudDirty
-    jsr UpdateHud
+    CALL_FAR 7, UpdateHud
 .sprites
     jsr UpdateNpcs
     jmp SetSlotSprites
@@ -651,21 +640,28 @@ PositionCitySprites
 ; (ptr),y with Y = line pair reads the right row (zero padding elsewhere).
 SetSpritePointers
     SUBROUTINE
-    lda #<PlayerGfx
+    ldx followers       ; the player, with a row of followers below
+    lda P0GfxLo,x
     sec
     sbc p0y
     sta p0gPtr
-    lda #>PlayerGfx
+    lda P0GfxHi,x
     sbc #0
     sta p0gPtr+1
-    lda #<PlayerCol
+    lda P0ColLo,x
     sec
     sbc p0y
     sta p0cPtr
-    lda #>PlayerCol
+    lda P0ColHi,x
     sbc #0
     sta p0cPtr+1
-
+    lda P0NusLo,x
+    sec
+    sbc p0y
+    sta p0nPtr
+    lda P0NusHi,x
+    sbc #0
+    sta p0nPtr+1
     rts
 
 ; ---------------------------------------------------------------------------
@@ -737,6 +733,7 @@ SetupRoomNpcs
 ; otherwise a random passerby, police officer or nobody.
 StreetSlot
     SUBROUTINE
+    jsr NotRecruited
     sta SC_W+SC_SLOT_PERSON,x
     cmp #NO_PERSON
     bne .homeless
@@ -773,6 +770,7 @@ StreetSlot
 ; A = person (or NO_PERSON), X = band slot, tLeft = the band's alley x.
 AlleySlot
     SUBROUTINE
+    jsr NotRecruited
     sta SC_W+SC_SLOT_PERSON,x
     cmp #NO_PERSON
     beq .empty
@@ -786,6 +784,22 @@ AlleySlot
     sta SC_W+SC_SLOT_X,x
     lda #0
     sta SC_W+SC_SLOT_DIR,x      ; people in alleys stand still
+    rts
+
+; A = person: NO_PERSON instead if they've joined you (they follow you now).
+NotRecruited
+    SUBROUTINE
+    cmp #NO_PERSON
+    beq .done
+    tay
+    lda SC_R+SC_PEOPLE,y
+    and #PERSON_RECRUITED
+    beq .free
+    lda #NO_PERSON
+    rts
+.free
+    tya
+.done
     rts
 
 ; Street walkers take a step every other frame, turning at the edges and
@@ -967,70 +981,6 @@ SetEnergyBar
     sta barPF+1
     lda BarPF2,y
     sta barPF+2
-    rts
-
-; HUD text "$DD.CC RR/??" composed into SuperChip buffer TXT1.
-UpdateHud
-    SUBROUTINE
-    lda #GLYPH_DOLLAR
-    sta hudStr+0
-    lda money
-    ldx #1
-    jsr .bcd
-    lda #GLYPH_DOT
-    sta hudStr+3
-    lda money+1
-    ldx #4
-    jsr .bcd
-    lda #GLYPH_SPACE
-    sta hudStr+6
-    lda recruits
-    ldx #7
-    jsr .bcd
-    lda #GLYPH_SLASH
-    sta hudStr+9
-    lda #GLYPH_QUESTION
-    sta hudStr+10
-    sta hudStr+11
-    lda #<hudStr
-    sta textPtr
-    lda #>hudStr
-    sta textPtr+1
-    jmp ComposeText
-.bcd                    ; A = BCD byte -> two digit glyphs at hudStr+X
-    pha
-    lsr
-    lsr
-    lsr
-    lsr
-    jsr .digit
-    sta hudStr,x
-    pla
-    and #$0F
-    jsr .digit
-    sta hudStr+1,x
-    rts
-.digit
-    ; fall through
-
-; A = 0-9 -> glyph offset. Clobbers ttmp.
-DigitGlyph
-    sta ttmp
-    asl
-    asl
-    adc ttmp            ; * 5 (carry clear: small values)
-    adc #GLYPH_0
-    rts
-
-; Text composer: 12 glyph offsets at (textPtr) -> SuperChip buffer TXT1.
-ComposeText
-    SUBROUTINE
-    COMPOSE_COLUMN TXT1, 0, FontHi, FontLo
-    COMPOSE_COLUMN TXT1, 1, FontHi, FontLo
-    COMPOSE_COLUMN TXT1, 2, FontHi, FontLo
-    COMPOSE_COLUMN TXT1, 3, FontHi, FontLo
-    COMPOSE_COLUMN TXT1, 4, FontHi, FontLo
-    COMPOSE_COLUMN TXT1, 5, FontHi, FontLo
     rts
 
     include "generated/bank0_data.asm"

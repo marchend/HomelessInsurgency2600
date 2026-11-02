@@ -1,13 +1,17 @@
 ; Bank 5: encounter logic.
 ;
 ;   EncounterStart  (far, from bank 0) set up a conversation with encSlot
-;   EncounterLogic  (far, each VBLANK) cursor, choices, outcomes, food, jail
+;   EncounterLogic  (far, each VBLANK) cursor, choices, outcomes, food, jail,
+;                   recruiting
+;   Collapse        (far, from the city) out of energy
+;   CrewTick        (far, every 256 city frames) crew hunger and desertion
 ;
 ; Outcomes come from tables generated from assets/outcomes.py. Anything that
 ; needs bank 0 (back to the city, a teleport, starting a fight) is requested
 ; through `pending` and done in bank 0's overscan.
 
 OUTSKIRTS_ROW = 56      ; first room of the bottom map row
+RECRUITS_TO_WIN_BCD = ((RECRUITS_TO_WIN / 10) << 4) | (RECRUITS_TO_WIN % 10)
 
     BANK_START 5
 
@@ -32,8 +36,19 @@ EncounterStart
     lda SC_R+SC_SLOT_PERSON,x   ; homeless: their fixed type
     tay
     lda SC_R+SC_PEOPLE,y
+    tax
     and #3
     sta encTemp
+    txa
+    and #PERSON_MET
+    bne .greet
+    txa                         ; first meeting: now you know of them
+    ora #PERSON_MET             ; (unless their shelter was already pointed out)
+    sta SC_W+SC_PEOPLE,y
+    lda PersonShelter,y
+    cmp shelters
+    bcc .greet
+    jsr KnownPlusOne
     jmp .greet
 .stranger
     jsr Random5                 ; police / passerby: a fresh mood, and a
@@ -178,12 +193,25 @@ EncounterLogic
 .done
     jmp BankReturn5
 .fire
+    lda #SFX_BLIP
+    sta SC_W+SC_SFX
     lda encPhase
-    bne .respond
+    cmp #PHASE_RESPONSE
+    beq .respond
+    cmp #PHASE_ROUND2
+    beq .round2
     lda encKind
     cmp #ENC_FOOD
     beq .food
+    cmp #ENC_HOMELESS
+    beq .recruit
     jsr Outcome
+    jmp BankReturn5
+.recruit
+    jsr RecruitOpener1
+    jmp BankReturn5
+.round2
+    jsr RecruitAnswer2
     jmp BankReturn5
 .food
     jsr FoodChoice
@@ -199,14 +227,45 @@ Respond
     cmp #ACT_OUTSKIRTS
     beq .outskirts
     cmp #ACT_JAIL
-    beq ShowJail
+    bne .notJail
+    jmp ShowJail
+.notJail
     cmp #ACT_JAIL_DONE
     beq .jailDone
     cmp #ACT_FOOD
     beq .food
+    cmp #ACT_WAKE
+    beq .wake
+    cmp #ACT_TITLE
+    beq .title
     lda #PENDING_RESUME
     sta pending
     rts
+.title
+    lda #PENDING_TITLE
+    sta pending
+    rts
+.wake                           ; wake in the first shelter you know of (or
+    lda #COLLAPSE_ENERGY        ; on the outskirts), $1.00 poorer
+    sta energy
+    ldx #COLLAPSE_INDEX
+    jsr SubMoney
+    bcs .woke
+    lda #0
+    sta money
+    sta money+1
+.woke
+    lda shelters
+    beq .outskirtsRoom
+    lda ShelterRooms
+    sta room
+    jmp .teleport
+.outskirtsRoom
+    jsr Random5
+    and #7
+    ora #OUTSKIRTS_ROW
+    sta room
+    jmp .teleport
 .food
     jsr FoodMenu
     jmp SetPortraits
@@ -272,6 +331,256 @@ ShowResponse
     sta hudDirty
     lda #PHASE_RESPONSE
     sta encPhase
+    rts
+
+; ---------------------------------------------------------------------------
+; Recruiting homeless people: the right opener for their type, then the
+; right answer to their question.
+; ---------------------------------------------------------------------------
+RecruitOpener1
+    SUBROUTINE
+    lda cursor
+    cmp #3
+    bne .talk
+    lda #PENDING_RESUME         ; WALK AWAY
+    sta pending
+    rts
+.talk
+    cmp #SHARE_FOOD_CHOICE
+    bne .noCost
+    ldx #SHARE_FOOD_INDEX
+    jsr SubMoney
+    bcs .noCost
+    lda #STR_NO_FOOD1           ; nothing to share
+    ldx #STR_NO_FOOD2
+    ldy #ACT_CITY
+    jmp ShowResponse
+.noCost
+    ldx encTemp
+    lda cursor
+    cmp RecruitOpener,x
+    bne Reject
+    lda RecruitQ1,x             ; they ask you something
+    sta encStr
+    lda RecruitQ2,x
+    sta encStr+1
+    lda #4                      ; round 2 choices
+    jsr LoadChoices
+    lda #PHASE_ROUND2
+    sta encPhase
+    rts
+
+RecruitAnswer2
+    SUBROUTINE
+    lda cursor
+    cmp #3
+    bne .answer
+    lda #PENDING_RESUME         ; WALK AWAY
+    sta pending
+    rts
+.answer
+    ldx encTemp
+    cmp RecruitAnswer,x
+    beq Join
+    ; fall through
+
+Reject
+    SUBROUTINE
+    ldx encTemp
+    lda RecruitNo2,x
+    sta tRight
+    lda RecruitNo1,x
+    ldx tRight
+    ldy #ACT_CITY
+    jmp ShowResponse
+
+; They join you: off the street, one more recruit, maybe a new follower,
+; maybe Act 1 is won.
+Join
+    SUBROUTINE
+    ldx encSlot
+    lda SC_R+SC_SLOT_PERSON,x
+    tay
+    lda SC_R+SC_PEOPLE,y
+    ora #PERSON_RECRUITED
+    sta SC_W+SC_PEOPLE,y
+    lda #KIND_NONE
+    sta SC_W+SC_SLOT_KIND,x
+    sed
+    lda recruits
+    clc
+    adc #1
+    sta recruits
+    cld
+    jsr SetFollowers
+    lda #SFX_RECRUIT
+    sta SC_W+SC_SFX
+    lda recruits
+    cmp #RECRUITS_TO_WIN_BCD
+    beq .won
+    lda #STR_JOINED1
+    ldx #STR_JOINED2
+    ldy #ACT_CITY
+    jmp ShowResponse
+.won
+    lda #ENC_WON
+    sta encKind
+    jsr SetPortraits
+    lda #STR_WON1
+    ldx #STR_WON2
+    ldy #ACT_TITLE
+    jsr ShowResponse
+    lda #STR_THE_END
+    sta encStr+2
+    rts
+
+; followers = recruits / PEOPLE_PER_FOLLOWER (recruits is BCD).
+SetFollowers
+    SUBROUTINE
+    lda recruits
+    lsr
+    lsr
+    lsr
+    lsr
+    tax                         ; tens
+    lda recruits
+    and #$0F
+.tens
+    dex
+    bmi .binary
+    clc
+    adc #10
+    bne .tens
+.binary
+    ldx #0
+.div
+    cmp #PEOPLE_PER_FOLLOWER
+    bcc .done
+    sbc #PEOPLE_PER_FOLLOWER
+    inx
+    bne .div
+.done
+    stx followers
+    rts
+
+; One more person you know of (BCD, shown in the HUD).
+KnownPlusOne
+    SUBROUTINE
+    sed
+    lda SC_R+SC_KNOWN
+    clc
+    adc #1
+    sta SC_W+SC_KNOWN
+    cld
+    lda #1
+    sta hudDirty
+    rts
+
+; The police pointed out the next shelter: everyone there you haven't met
+; becomes known.
+LearnShelter
+    SUBROUTINE
+    lda shelters
+    cmp #4
+    bcs .done
+    ldy #HOMELESS_COUNT-1
+.person
+    lda PersonShelter,y
+    cmp shelters
+    bne .next
+    lda SC_R+SC_PEOPLE,y
+    and #PERSON_MET
+    bne .next
+    jsr KnownPlusOne
+.next
+    dey
+    bpl .person
+    inc shelters
+.done
+    rts
+
+; ---------------------------------------------------------------------------
+; Out of energy, and the crew's hunger
+; ---------------------------------------------------------------------------
+Collapse
+    SUBROUTINE
+    lda #ENC_COLLAPSE
+    sta encKind
+    lda #STR_COLLAPSE1
+    ldx #STR_COLLAPSE2
+    ldy #ACT_WAKE
+    jsr Notice
+    lda #SFX_BAD
+    sta SC_W+SC_SFX
+    jmp BankReturn5
+
+; Every 256 city frames: a crew with nothing to eat gets hungrier; past
+; DESERT_AT one recruit walks away (and hunger drops back to HUNGRY_AT).
+CrewTick
+    SUBROUTINE
+    lda followers
+    beq .done
+    lda SC_R+SC_HUNGER
+    cmp #255
+    beq .full
+    clc
+    adc #1
+    sta SC_W+SC_HUNGER
+.full
+    cmp #DESERT_AT
+    bcc .done
+    lda #HUNGRY_AT
+    sta SC_W+SC_HUNGER
+    ldy #HOMELESS_COUNT-1       ; the last recruit on the list leaves
+.find
+    lda SC_R+SC_PEOPLE,y
+    and #PERSON_RECRUITED
+    bne .leave
+    dey
+    bpl .find
+    bmi .done
+.leave
+    lda SC_R+SC_PEOPLE,y
+    and #~PERSON_RECRUITED
+    sta SC_W+SC_PEOPLE,y
+    sed
+    lda recruits
+    sec
+    sbc #1
+    sta recruits
+    cld
+    jsr SetFollowers
+    lda #SFX_DESERT
+    sta SC_W+SC_SFX
+    lda #ENC_CREW
+    sta encKind
+    lda #STR_DESERTED1
+    ldx #STR_DESERTED2
+    ldy #ACT_CITY
+    jsr Notice
+.done
+    jmp BankReturn5
+
+; Switch from the city to a message screen of kind encKind: A / X = lines,
+; Y = ACT_* for CONTINUE.
+Notice
+    SUBROUTINE
+    pha
+    txa
+    pha
+    tya
+    pha
+    jsr SetPortraits
+    pla
+    tay
+    pla
+    tax
+    pla
+    jsr ShowResponse
+    lda SWCHA
+    sta joyPrev
+    lda #SCREEN_ENCOUNTER
+    sta screen
     rts
 
 ; ---------------------------------------------------------------------------
@@ -367,10 +676,7 @@ Outcome
     sta ttmp
     and #OUT_SHELTER
     beq .noShelter
-    lda shelters
-    cmp #4
-    bcs .noShelter
-    inc shelters
+    jsr LearnShelter
 .noShelter
     lda ttmp
     and #OUT_LEAVE
@@ -401,6 +707,11 @@ Outcome
 ; money += outcome X's amount (BCD), capped at $99.99. Preserves X.
 AddMoney
     SUBROUTINE
+    lda OutMoneyHi,x
+    ora OutMoneyLo,x
+    beq .done
+    lda #SFX_COIN
+    sta SC_W+SC_SFX
     sed
     clc
     lda money+1
@@ -465,6 +776,8 @@ FoodChoice
     bne .share
     pla
     pla
+    lda #0
+    sta SC_W+SC_HUNGER          ; the crew has eaten
     jmp .bought
 .cantFeed
     pla
@@ -486,6 +799,8 @@ FoodChoice
 .ate
     sta energy
 .bought
+    lda #SFX_EAT
+    sta SC_W+SC_SFX
     lda #STR_BOUGHT1
     ldx #STR_BOUGHT2
     ldy #ACT_FOOD
@@ -500,14 +815,19 @@ FoodChoice
     FIRE_PRESSED_SUB FirePressed5
 
 ; portrait for each encounter kind: homeless, police, passerby, food, jail
+; homeless, police, passerby, food, jail, collapse, crew, won
 PortraitGfxLo
     .byte <HomelessSideGfx, <CopSideGfx, <PasserbySideGfx, <PasserbySideGfx, <CopSideGfx
+    .byte <HomelessSideGfx, <HomelessSideGfx, <HomelessSideGfx
 PortraitGfxHi
     .byte >HomelessSideGfx, >CopSideGfx, >PasserbySideGfx, >PasserbySideGfx, >CopSideGfx
+    .byte >HomelessSideGfx, >HomelessSideGfx, >HomelessSideGfx
 PortraitColLo
     .byte <HomelessSideCol, <CopSideCol, <PasserbySideCol, <PasserbySideCol, <CopSideCol
+    .byte <HomelessSideCol, <HomelessSideCol, <HomelessSideCol
 PortraitColHi
     .byte >HomelessSideCol, >CopSideCol, >PasserbySideCol, >PasserbySideCol, >CopSideCol
+    .byte >HomelessSideCol, >HomelessSideCol, >HomelessSideCol
 
     include "generated/bank5_data.asm"
 

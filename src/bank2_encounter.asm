@@ -1,7 +1,8 @@
 ; Bank 2: encounter screen.
 ;
 ;   line  0       blank (screen on)
-;   lines 1-10    header word (HOMELESS, POLICE, PASSERBY, FOOD, JAIL)
+;   lines 1-10    header word (HOMELESS, POLICE, PASSERBY, FOOD, JAIL,
+;                 OUT COLD, CREW, RALLIED)
 ;   lines 11-70   scene: 30 rows of 2 lines, both portraits double width
 ;   lines 71-84   gap: sidewalk (3 lines), text players positioned, line 0
 ;                 composed
@@ -267,9 +268,10 @@ DrawTextB
     POS_OBJECT_SUB PosObject2
 
 HdrBase                     ; per encounter kind (ENC_*)
-    .byte 0, 5, 10, 15, 20
+    .byte 0, 5, 10, 15, 20, 25, 30, 35
 SceneBase
     .byte 0, SCENE_PAIRS, SCENE_PAIRS * 2, SCENE_PAIRS * 3, SCENE_PAIRS * 4
+    .byte SCENE_PAIRS * 5, SCENE_PAIRS * 6, SCENE_PAIRS * 7
 
     include "generated/bank2_data.asm"
 

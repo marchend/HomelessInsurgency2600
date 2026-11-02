@@ -26,6 +26,7 @@ pfC         ds 5
 ; kernel sprite pointers (graphics/colors minus bottom row, see CityKernel)
 p0gPtr      ds 2
 p0cPtr      ds 2
+p0nPtr      ds 2        ; NUSIZ0 per row: copies for the follower row
 slotG       ds 10       ; P1 graphics pointer per city section (slot 0-4)
 slotC       ds 10       ; P1 color pointer per slot
 slotCoarse  ds 4        ; slots 1-4: P1 reposition delay loop count
@@ -102,7 +103,15 @@ SC_SLOT_PERSON = 70     ; 5 bytes: homeless id or NO_PERSON
 SC_SLOT_DIR    = 75     ; 5 bytes: walk direction (1 / $FF)
 SC_PEOPLE      = 80     ; 40 bytes, one per homeless person:
                         ;   bits 0-1 type (calm-rational, calm-irrational,
-                        ;   angry-rational, angry-irrational)
+                        ;   angry-rational, angry-irrational), PERSON_* flags
+SC_SFX         = 120    ; sound effect to start (SFX_*), 0 = none
+SC_SFX_POS     = 121    ; step of the playing sound (0 = silent)
+SC_SFX_TIME    = 122    ; frames left in that step
+SC_KNOWN       = 123    ; homeless people you know of (BCD), 0 = "??"
+SC_HUNGER      = 124    ; crew hunger (see HUNGRY_AT / DESERT_AT)
+
+PERSON_MET       = 4
+PERSON_RECRUITED = 8
 
 SCREEN_TITLE     = 0
 SCREEN_CITY      = 1
@@ -116,21 +125,28 @@ PENDING_START_CITY = 1  ; title -> city
 PENDING_RESUME     = 2  ; encounter / fight -> city, same place
 PENDING_TELEPORT   = 3  ; encounter -> city at room/p0x/p0y (jail, outskirts)
 PENDING_FIGHT      = 4  ; encounter -> fight
+PENDING_TITLE      = 5  ; Act 1 won -> title
 
 ENC_HOMELESS = 0        ; encKind: what the encounter screen shows
 ENC_POLICE   = 1
 ENC_PASSERBY = 2
 ENC_FOOD     = 3
 ENC_JAIL     = 4
+ENC_COLLAPSE = 5
+ENC_CREW     = 6
+ENC_WON      = 7
 
 PHASE_CHOOSE   = 0
 PHASE_RESPONSE = 1
+PHASE_ROUND2   = 2      ; recruiting: answering their question
 
 ACT_CITY      = 0       ; back to the city
 ACT_OUTSKIRTS = 1       ; dumped at the edge of the city
 ACT_JAIL      = 2       ; show the jail screen next
 ACT_JAIL_DONE = 3       ; serve the sentence
 ACT_FOOD      = 4       ; back to the food menu
+ACT_WAKE      = 5       ; after collapsing: wake up somewhere safer
+ACT_TITLE     = 6       ; Act 1 won: back to the title
 
 KIND_NONE     = 0
 KIND_SHELTER  = 1

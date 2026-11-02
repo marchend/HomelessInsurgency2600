@@ -17,8 +17,8 @@
 - [x] M3 Encounter kernel + text (Stage B)
 - [x] M4 Dialogue pipeline + odds (Stage C)
 - [x] M5 Combat (Stage C)
-- [ ] M6 Act 1 loop
-- [ ] M7 Sound and polish
+- [x] M6 Act 1 loop (Stage D)
+- [x] M7 Sound (Stage D; polish after play-testing)
 
 ## Review
 - Mockup renderer checks per-scanline TIA limits (one color per object per line, one owner per object per line, sprite reposition gaps, 12-char text and line-compose gaps). All 5 scenes pass.
@@ -49,3 +49,15 @@
 - Bugs caught by tests: branch after `ldy #0` (won fights ended in jail), signs unreachable on rooftops, VDEL leftovers above the fight footer.
 - 47 tests pass, including an exhaustive check of the outcome roller against the odds tables for every random value, choice and temperament.
 - Not verified: Stella screenshots - needs a play-test. Bank 0 has ~150 bytes left; Stage D logic should go in bank 5 / 7.
+
+## Stage D review (Act 1 complete)
+- Recruiting: the right opener for the person's type, then the right answer to their question (assets/outcomes.py RECRUIT). Wrong answers get that type's refusal; SHARE FOOD costs $0.50. Recruits leave the streets.
+- Known count in the HUD ("RR/KK", "??" until you meet anyone): first meetings, plus everyone at a shelter the police point out.
+- Followers: 1 per 5 recruits, drawn as a row under the player with sprite copies (NUSIZ0 per row in the kernel); 4-5 use a two-figure graphic (shows 4 / 6 figures).
+- Crew hunger: +1 per 256 frames; at 32 they won't fight; at 64 one recruit leaves (notice screen). FEED CREW resets it.
+- Collapse at 0 energy: wake at the first known shelter (or the outskirts) with some energy, $1.00 poorer.
+- Recruit 26 -> "RALLIED / 26 OF US AND RISING!" -> back to the title.
+- Sound effects (bank 7): coin, hit, recruit, eat, bad, pickup, blip, desertion.
+- Bank 7 now holds the HUD/title/footer text (freed ~800 bytes of bank 0).
+- Bugs caught: overscan overruns (city start, return to title) that hung in the timer wait; DASM truncating long .byte lines; band-start line over 76 cycles on page crossings.
+- 53 tests pass. Not verified in Stella (needs a play-test). Known quirk: the follower row overlaps a roof when the player stands at the bottom of a street, and spreads to the right of the player.

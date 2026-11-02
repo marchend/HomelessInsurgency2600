@@ -18,7 +18,7 @@ def p1_line(slot):
     return (77 - pair) * 2 + 1
 
 
-class NpcTest(RomCase):
+class NpcHelpers(RomCase):
     def walk_to_slot(self, slot):
         for _ in range(200):
             dx = self.sc("SC_SLOT_X", slot) - self.ram("p0x")
@@ -39,6 +39,8 @@ class NpcTest(RomCase):
     def enc_str(self, i):
         return self.atari.read_ram(self.sym["encStr"] + i)
 
+
+class NpcTest(NpcHelpers):
     # --- city ---------------------------------------------------------------
     def test_start_room_has_a_homeless_person_in_the_top_street(self):
         self.start_city()

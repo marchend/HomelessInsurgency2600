@@ -88,15 +88,40 @@ OUTCOMES = {
                       "effects": [("heat", 32), ("combat",)]}],
     },
 
-    # Recruiting homeless people comes in Stage D; for now they hedge.
-    ("homeless", "I'M ONE OF U"): {"follower_shift": 0, "heat_shift": False, "outcomes": [
-        {"name": "maybe", "odds": None, "lines": ("MAYBE.", "WE'LL SEE."), "effects": []}]},
-    ("homeless", "SHARE FOOD"): {"follower_shift": 0, "heat_shift": False, "outcomes": [
-        {"name": "maybe", "odds": None, "lines": ("MAYBE.", "WE'LL SEE."), "effects": []}]},
-    ("homeless", "BIG PLAN..."): {"follower_shift": 0, "heat_shift": False, "outcomes": [
-        {"name": "maybe", "odds": None, "lines": ("MAYBE.", "WE'LL SEE."), "effects": []}]},
+    # Homeless people are recruited instead (RECRUIT below); only WALK AWAY
+    # goes through the outcome tables.
     ("homeless", "WALK AWAY"): {"follower_shift": 0, "heat_shift": False, "outcomes": [LEAVE]},
 }
+
+# Recruiting homeless people: two exchanges. The opener (CHOICES["homeless"])
+# and then their question, answered from ROUND2_CHOICES. Two right answers
+# and they join. Types: calm-rational, calm-irrational, angry-rational,
+# angry-irrational. SHARE FOOD costs SHARE_FOOD_CENTS.
+ROUND2_CHOICES = ["WE ORGANIZE", "SAFE AND FED", "HIT 'EM BACK", "WALK AWAY"]
+RECRUIT = [
+    {"type": "calm_rational", "opener": "BIG PLAN...", "answer": "WE ORGANIZE",
+     "question": ("NUMBERS WIN.", "HOW, THOUGH?"), "no": ("THAT'S NO", "PLAN. NO.")},
+    {"type": "calm_irrational", "opener": "I'M ONE OF U", "answer": "SAFE AND FED",
+     "question": ("MOON SAYS WE", "NEED A HOME."), "no": ("THE PIGEONS", "SAY NO.")},
+    {"type": "angry_rational", "opener": "I'M ONE OF U", "answer": "HIT 'EM BACK",
+     "question": ("FINE. AND?", "THEN WHAT?"), "no": ("WASTE OF MY", "TIME. SCRAM.")},
+    {"type": "angry_irrational", "opener": "SHARE FOOD", "answer": "HIT 'EM BACK",
+     "question": ("FOOD! MORE!", "WHAT ELSE?"), "no": ("GET LOST", "OR ELSE!")},
+]
+RECRUIT_LINES = {
+    "joined": ("I'M IN.", "LEAD ON."),
+    "no_food": ("YOU GOT", "NOTHING!"),
+}
+SHARE_FOOD_CENTS = 50
+RECRUITS_TO_WIN = 26          # 65% of the 40 homeless people
+PEOPLE_PER_FOLLOWER = 5       # one visible follower per this many recruits
+
+# The crew gets hungry: +1 every 256 frames (~4 s). Hungry crews don't fight;
+# after a further while unfed one recruit leaves (and hunger drops back).
+HUNGRY_AT = 32                # ~2 minutes after the last FEED CREW
+DESERT_AT = 64                # ~4 minutes: one recruit walks away
+COLLAPSE_ENERGY = 56          # energy after waking up from a collapse
+COLLAPSE_COST_CENTS = 100     # money lost when you collapse
 
 # Food places: greeting, menu and prices (cents) / energy gained.
 FOOD_GREETING = ("WHAT'LL IT", "BE?")
@@ -119,7 +144,11 @@ MESSAGES = {
     "fled": ("YOU GOT", "AWAY!"),
     "took_cash": ("YOU TOOK", "THEIR CASH."),
     "they_fled": ("THEY GOT", "AWAY."),
+    "collapse": ("YOU PASSED", "OUT COLD."),
+    "deserted": ("ONE OF YOUR", "CREW LEFT."),
+    "won": ("26 OF US", "AND RISING!"),
     "continue": ("CONTINUE", None),       # a choice line
+    "the_end": ("THE END", None),
 }
 
 # Fights. Damage is in energy points (the player's energy bar is 252).
@@ -133,3 +162,15 @@ WEAPONS = [  # name shown in the fight (5 chars max), extra damage per hit
 ROB_CASH_CENTS = 300          # winning a robbery fight
 JAIL_FINE_CENTS = 200         # taken when you leave jail (or all you have)
 PASSERBY_CALLS_COPS = 30      # percent: losing a robbery fight brings police
+
+# Sound effects: (AUDC tone, AUDF pitch 0-31, AUDV volume 0-15, frames).
+SOUNDS = {
+    "coin": [(4, 12, 8, 4), (4, 8, 8, 6)],
+    "hit": [(8, 20, 10, 3), (8, 28, 6, 3)],
+    "recruit": [(4, 20, 8, 5), (4, 15, 8, 5), (4, 11, 8, 10)],
+    "eat": [(6, 25, 6, 4), (6, 20, 6, 4)],
+    "bad": [(1, 25, 8, 10), (1, 31, 8, 14)],
+    "pickup": [(4, 10, 8, 3), (4, 6, 8, 5)],
+    "blip": [(4, 8, 4, 2)],
+    "desert": [(4, 11, 8, 5), (4, 15, 8, 5), (4, 22, 8, 10)],
+}

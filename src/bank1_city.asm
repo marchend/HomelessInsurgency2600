@@ -26,17 +26,20 @@
 
     include "kernel.h"
 
-    ; Line A of a normal pair.
+    ; Line A of a normal pair. NUSIZ0 comes per row too: the follower row
+    ; under the player uses copies.
     MAC LINE_A
         sta WSYNC
         sta HMOVE           ;  3
+        lda (p0nPtr),y
+        sta NUSIZ0          ; 11
         lda CityBK,y
-        sta COLUBK          ; 10
+        sta COLUBK          ; 18
         lda (p0gPtr),y
-        sta GRP0            ; 18
+        sta GRP0            ; 26
         lda (p0cPtr),y
-        sta COLUP0          ; 26
-        sta HMCLR           ; 29  (>= 24 cycles after HMOVE)
+        sta COLUP0          ; 34
+        sta HMCLR           ; 37  (>= 24 cycles after HMOVE)
     ENDM
 
     ; Line B of every pair: P1 from slot {3}, then loop while Y != {2}.
@@ -81,16 +84,16 @@
         lda {1}+2
         sta PF2             ; 27
         lda {1}+3
-        sta CTRLPF          ; 33
-        lda CityBK,y
-        sta COLUBK          ; 40
+        sta CTRLPF          ; 33  (background stays asphalt: no write)
+        lda (p0nPtr),y
+        sta NUSIZ0          ; 41
         lda (p0gPtr),y
-        sta GRP0            ; 48
+        sta GRP0            ; 49
         lda (p0cPtr),y
-        sta COLUP0          ; 56
+        sta COLUP0          ; 57
         lda #0
-        sta GRP1            ; 61  previous slot's sprite off
-        sta HMCLR           ; 64
+        sta GRP1            ; 62  previous slot's sprite off
+        sta HMCLR           ; 65  (+3 if the indirect loads cross pages)
     ENDM
 
     ; First line A of a street section: empty playfield or lane dashes.
@@ -112,11 +115,13 @@
         ENDIF
         lda CityBK,y
         sta COLUBK          ; 38
+        lda (p0nPtr),y
+        sta NUSIZ0          ; 46
         lda (p0gPtr),y
-        sta GRP0            ; 46
+        sta GRP0            ; 54
         lda (p0cPtr),y
-        sta COLUP0          ; 54
-        sta HMCLR           ; 57
+        sta COLUP0          ; 62
+        sta HMCLR           ; 65
     ENDM
 
 CityKernel
@@ -152,6 +157,8 @@ CityKernel
     sta HMOVE               ;  3
     lda #0
     sta VBLANK              ;  8
+    lda (p0nPtr),y
+    sta NUSIZ0
     lda CityBK,y
     sta COLUBK
     lda (p0gPtr),y

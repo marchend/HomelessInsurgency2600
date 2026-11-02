@@ -135,10 +135,15 @@ FightLogic
     bne .foeTurn
     jsr InReach
     bcc .foeTurn
+    lda #0                      ; each follower adds 1, if the crew is fed
+    ldx SC_R+SC_HUNGER
+    cpx #HUNGRY_AT
+    bcs .hungry
+    lda followers
+.hungry
     ldx weapon
-    lda WeaponDamage,x
     sec                         ; +1: fists hit for 1
-    adc followers               ; each fed follower adds 1 (Stage D: fed check)
+    adc WeaponDamage,x
     sta ttmp
     lda foeHP
     sec
@@ -149,6 +154,8 @@ FightLogic
     sta foeHP
     lda #HIT_FRAMES
     sta hitFlash
+    lda #SFX_HIT
+    sta SC_W+SC_SFX
 .foeTurn
     lda foeAtk                  ; their swing
     beq .foeIdle
@@ -178,6 +185,8 @@ FightLogic
     sta energy
     lda #HIT_FRAMES
     sta hitFlash
+    lda #SFX_HIT
+    sta SC_W+SC_SFX
     bne .checkEnd
 .foeIdle
     lda fx1                     ; close in, then wind up
