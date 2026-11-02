@@ -1,7 +1,8 @@
 # Homeless Insurgency (Atari 2600) — Technical Concept
 
-Status: draft v0.3 — covers Act 1 in detail; Acts 2 and 3 are placeholders.
+Status: draft v0.4 — covers Act 1 in detail; Acts 2 and 3 are placeholders.
 v0.2 decisions: 32K F4SC locked; 12-char lines confirmed; homeless type is told by the greeting, not a label; regular people can be robbed; visible followers (1 per 5 recruits) that change how the city reacts; food costs money.
+v0.4: greetings written (assets/dialogue/greetings.txt); police and passersby get 4 temperaments each, told by greeting.
 v0.3 decisions: failed-robbery penalty confirmed; followers must be fed (more followers = more money needed); followers help in fights.
 Mockups: [docs/mockups/](mockups/) (rendered by [tools/mockups/render_mockups.py](../tools/mockups/render_mockups.py)).
 
@@ -67,7 +68,8 @@ Mockups for each are in [docs/mockups/](mockups/). Every mockup is drawn with on
 ### 4.1 City (top-down exploration)
 
 - **Flip-screen rooms**, Adventure-style. The city is an 8 × 8 grid = 64 rooms.
-- **Playfield** draws buildings (asymmetric, 40 blocks across, 4 px each). **Background** color per scanline draws asphalt and sidewalks.
+- **Playfield** draws buildings, 40 blocks across (4 px each). Each building band is **mirrored or repeated** (left half reflected or copied to the right), so the kernel never rewrites the playfield mid-line; that leaves the cycles for two sprites per line pair. Rooms vary by which pattern each band uses (`assets/rooms/city.txt`). **Background** color per line pair draws asphalt and sidewalks.
+- Walls are checked in software against the room's band patterns, not with hardware collision (lane dashes are playfield too, and NPCs sharing P1 can't use hardware collision).
 - **P0** = player, plus a second P0 band right behind the player for **followers** (see 5.6). **P1** = everyone else, *multiplexed vertically*: one NPC or sign per horizontal band, repositioned between bands. Up to ~6 NPCs/signs per room with no flicker, as long as no two share scanlines.
 - Horizontal streets are 36 lines tall so the player (20 lines) and the follower row (12 lines) fit in one street.
 - NPC kind is readable at a glance by color: police = blue, regular people = green/varied, homeless = brown. **Homeless types all look the same** in the city — the player learns the type from their greeting (4.2).
@@ -121,16 +123,29 @@ Title, act cards, jail, "dumped at the outskirts", game over, act win. All simpl
 
 ### 5.3 Homeless types and the greeting tell
 
-The encounter header only says HOMELESS. The **greeting** is how the player works out the type. Each type gets a pool of 3–4 greetings in its own voice; one is picked at random each time you meet someone new. Draft lines (12 chars max per line):
+The encounter header only says HOMELESS. The **greeting** is how the player works out the type. Each type has a pool of greetings in its own voice; one is picked at random each time. All greetings live in [assets/dialogue/greetings.txt](../assets/dialogue/greetings.txt) (the author's originals plus variants), checked by `tests/test_dialogue.py`.
 
 | Type | Voice | Example greetings | Responds to | Fails on |
 |---|---|---|---|---|
-| Calm-rational | polite, wary, precise | `EVENING. YOU` / `NEW AROUND?` · `GOT A MINUTE` / `TO SPARE?` | a plan, facts, shelter info | yelling, vague promises |
-| Calm-irrational | dreamy, odd, gentle | `PIGEONS SAID` / `YOU'D COME.` · `SHH. THE SKY` / `IS LISTENING` | listening, empathy, patience | pressure, logic |
-| Angry-rational | blunt, suspicious | `WHO SENT YA?` / `TALK FAST?` · `WHAT. SAY IT` / `OR SCRAM.` | respect, directness, shared grievance | small talk, pity |
-| Angry-irrational | hostile, paranoid | `BACK OFF MY` / `CART! BACK!` · `YOU'RE ONE` / `OF THEM!` | food, money, showing strength | arguing — may start a fight |
+| Calm-rational | easygoing, direct | `WHAT'S UP?` | a plan, facts, shelter info | yelling, vague promises |
+| Calm-irrational | dreamy, odd | `PIGEONS KNOW` / `THE SCORE.` | listening, empathy, patience | pressure, logic |
+| Angry-rational | blunt, profane | `THE FUCK YOU` / `WANT?` | respect, directness, shared grievance | small talk, pity |
+| Angry-irrational | paranoid, threatening | `THEY STOLE` / `MY IDEA!` · `TRY ME! I'LL` / `CUT YOU!` | food, money, showing strength | arguing — may start a fight |
 
 A recruitment is 2–3 exchanges. Right answers raise trust; at the threshold they join. Wrong answers lower trust; at zero they refuse for the rest of the day (or fight, for angry-irrational).
+
+### 5.3b Police and passerby temperaments
+
+Police and passersby also have four temperaments, rolled fresh for each encounter and told by the greeting the same way:
+
+| Police | Passerby | Effect on the odds tables |
+|---|---|---|
+| Calm (`HOW CAN I / HELP?`) | Patient (`DO YOU NEED / HELP?`) | best outcomes: shelter directions likely, change 3× likelier, yelling rarely punished |
+| Less calm (`WHAT?`) | Less patient (`WHAT IS IT?`) | baseline tables (5.4) |
+| Angry (`NO TIME FOR / YOUR SHIT!`) | Impatient (`NO TIME FOR / YOU.`) | hostile outcomes doubled; passerby never gives money |
+| Really angry (`JUST GIVE ME / AN EXCUSE!`) | Angry impatient (`FUCK OFF!`) | police: yelling → beating almost always, may start a fight unprovoked; passerby fights back harder when robbed |
+
+The roll is weighted by **heat** and **followers**: the bigger and louder your movement, the more likely you meet angry cops and impatient people. So the greeting tells the player whether to push their luck or walk away.
 
 ### 5.4 Encounters and odds
 
@@ -218,5 +233,5 @@ Decided (v0.3): failed robbery = they escape, 30% a cop arrives → jail · foll
 Decided: unfed crew — one recruit leaves per full unfed day.
 
 Still open:
-1. **Greeting pools:** final 3–4 greetings per homeless type, and the 2–3 exchange dialogue trees behind them.
+1. **Dialogue trees:** the 2–3 exchanges behind each homeless greeting (needed by milestone M4).
 2. **Acts 2 and 3:** heat, money and the follower count are the natural hooks.

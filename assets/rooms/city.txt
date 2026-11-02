@@ -1,0 +1,34 @@
+# Homeless Insurgency - Act 1 city map.
+#
+# [patterns] name, mode, 20-column left half of a building band.
+#   '#' = building, '.' = open ground (a vertical street).
+#   mode M = mirrored (right half is the left half flipped), R = repeated.
+#   Column 0 must be a building so bands never leak across room edges.
+#
+# [map] 8 rows x 8 rooms. Each room is three pattern names for its top,
+#   middle and bottom building band, plus an optional sign: S = shelter,
+#   F = food. A room's bottom band must match the top band of the room below
+#   it so vertical streets line up; the build checks this.
+#
+# [start] row column of the player's starting room.
+
+[patterns]
+W M ####################
+X M #########....#######
+E M ###....#############
+C M ##################..
+D R ####....############
+P M ##....######....####
+
+[map]
+WWX   WXE   WDC   WWX   WCW:F WXX   WWE   WEC
+XXC   EPX   CWW:S XDE   WXX   XWC   ECX   CXW
+CDX:F XWW   WXX   ECC   XWE   CPX   XXW:S WWX
+XCE   WXX   XWC   CXX:F EPX   XWC   WDE   XXX
+EWX   XDC   CXE   XWW   XXX   CCE   EWX:F XPC
+XXW   CWX:S EPX   WCE   XWC   EXX   XDC   CWE
+WPC   XXE   XWX   EXX   CDE   XWW:S CXX   ECX
+CWW   ECW   XXW:F XDW   EWW   WXW   XPW   XWW
+
+[start]
+3 3

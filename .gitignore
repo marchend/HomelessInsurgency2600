@@ -1,0 +1,5 @@
+bin/
+build/
+.venv/
+__pycache__/
+src/generated/
