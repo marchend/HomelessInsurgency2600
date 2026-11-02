@@ -72,7 +72,7 @@ class NpcTest(RomCase):
         self.talk_to_slot(1)
         self.assertEqual(self.ram("encKind"), 0)
         self.assertEqual(self.ram("encTemp"), ptype)
-        _, greet, _ = build_dialogue.build()
+        greet = build_dialogue.build()["greet"]
         g = 0 * 4 + ptype
         pool = [(greet["line1"][i], greet["line2"][i])
                 for i in range(greet["start"][g], greet["start"][g] + greet["count"][g])]
@@ -82,7 +82,7 @@ class NpcTest(RomCase):
     def test_police_get_the_four_police_choices(self):
         self.start_city()
         self.talk_to_slot(1, kind=self.sym["KIND_POLICE"])
-        _, _, choices = build_dialogue.build()
+        choices = build_dialogue.build()["choices"]
         self.assertEqual(self.ram("nChoices"), 4)
         self.assertEqual([self.enc_str(2 + i) for i in range(4)], choices["police"])
         self.snapshot(self.frames(1), "encounter_police")
@@ -90,7 +90,7 @@ class NpcTest(RomCase):
     def test_passersby_have_three_choices_and_a_blank_line(self):
         self.start_city()
         self.talk_to_slot(1, kind=self.sym["KIND_PASSERBY"])
-        _, _, choices = build_dialogue.build()
+        choices = build_dialogue.build()["choices"]
         self.assertEqual(self.ram("nChoices"), 3)
         self.assertEqual([self.enc_str(2 + i) for i in range(3)], choices["passerby"])
         self.assertEqual(self.enc_str(5), 0)
@@ -108,10 +108,14 @@ class NpcTest(RomCase):
             self.frames(1)
         self.assertEqual(self.ram("cursor"), 0)
 
-    def test_fire_ends_the_encounter_and_the_city_carries_on(self):
+    def test_continue_after_a_response_returns_to_the_city(self):
         self.start_city()
         self.talk_to_slot(1)
-        self.frames(1, fire=True)
+        self.frames(1, fire=True)           # choose: a response screen
+        self.frames(1)
+        self.assertEqual(self.ram("screen"), self.sym["SCREEN_ENCOUNTER"])
+        self.assertEqual(self.ram("encPhase"), self.sym["PHASE_RESPONSE"])
+        self.frames(1, fire=True)           # CONTINUE
         self.frames(1)
         self.assertEqual(self.ram("screen"), self.sym["SCREEN_CITY"])
         xs = [self.sc("SC_SLOT_X", s) for s in range(5)]

@@ -60,3 +60,47 @@ Reset{1}
             REPEND
         ENDIF
     ENDM
+
+    ; Routines several banks need their own copy of (no far call back to bank 0).
+
+    ; 8-bit Galois LFSR (taps $B8): period 255. Returns the new value in A.
+    MAC RANDOM_SUB      ; {1} = routine name
+{1}
+        lda rng
+        lsr
+        bcc .noEor
+        eor #$B8
+.noEor
+        sta rng
+        rts
+    ENDM
+
+    ; Carry set on the frame the fire button goes down. Clobbers A, X.
+    MAC FIRE_PRESSED_SUB ; {1} = routine name
+{1}
+        lda INPT4
+        tax
+        eor #$80        ; bit 7 = 1 when pressed now
+        and firePrev    ; ... and not pressed last frame
+        stx firePrev
+        asl             ; into carry
+        rts
+    ENDM
+
+    ; Encounter text composer stubs, at the same address in banks 2 and 3:
+    ; bank 2 jumps in, the code continues in bank 3 (which composes text line
+    ; X into buffer A or B), then switches back and returns in bank 2.
+    MAC COMPOSE_STUBS   ; {1} = bank
+        ORG {1} * $1000 + $FC0
+        RORG $FFC0
+ComposeFarA{1}
+        lda BANK0+3
+        jsr ComposeLineA
+        lda BANK0+2
+        rts
+ComposeFarB{1}
+        lda BANK0+3
+        jsr ComposeLineB
+        lda BANK0+2
+        rts
+    ENDM

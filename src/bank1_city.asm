@@ -219,6 +219,7 @@ Ck_cLoop
 ; --- HUD: lines 156-191 ------------------------------------------------------
     sta WSYNC               ; 156
     lda #0
+    sta GRP1                ; GRP1, GRP0, GRP1: empties both VDEL copies too
     sta GRP0
     sta GRP1
     sta PF0

@@ -150,7 +150,7 @@ The roll is weighted by **heat** and **followers**: the bigger and louder your m
 
 ### 5.4 Encounters and odds
 
-Odds are data tables (out of 256) in ROM so they can be tuned without touching code. All tables are then shifted by the follower count (5.6) and heat.
+Odds are data tables (out of 256) in ROM so they can be tuned without touching code — edit [assets/outcomes.py](../assets/outcomes.py) and rebuild. All tables are then shifted by the follower count (5.6) and heat.
 
 **Regular people (passersby)** — choices `ASK CHANGE` / `ROB` / `WALK AWAY`:
 

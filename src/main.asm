@@ -3,8 +3,11 @@
 ; Bank map
 ;   0  main loop, game logic, text composer, room data
 ;   1  city kernel + city sprites
-;   2  encounter screen + encounter text
-;   3-5, 7  reserved (combat, more dialogue, audio)
+;   2  encounter screen kernel
+;   3  encounter text (all screen lines + composer)
+;   4  fights
+;   5  encounter logic, outcomes, food, jail
+;   7  reserved (recruiting, audio, Acts 2-3)
 ;   6  title screen
 
     processor 6502
@@ -17,12 +20,9 @@
     include "bank1_city.asm"
 
     include "bank2_encounter.asm"
-    BANK_START 3
-    BANK_END 3
-    BANK_START 4
-    BANK_END 4
-    BANK_START 5
-    BANK_END 5
+    include "bank3_text.asm"
+    include "bank4_fight.asm"
+    include "bank5_talk.asm"
 
     include "bank6_title.asm"
 

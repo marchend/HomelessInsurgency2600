@@ -4,8 +4,8 @@ STELLA ?= stella
 
 ROM     = bin/hi.bin
 SOURCES = $(wildcard src/*.asm src/*.h)
-ASSETS  = $(wildcard assets/*.py assets/rooms/*.txt assets/dialogue/*.txt) tools/build_assets.py tools/rooms.py tools/build_dialogue.py tools/dialogue.py
-GEN     = src/generated/bank0_data.asm src/generated/bank1_data.asm src/generated/bank2_data.asm src/generated/bank6_data.asm
+ASSETS  = $(wildcard assets/*.py assets/rooms/*.txt assets/dialogue/*.txt) tools/build_assets.py tools/rooms.py tools/build_dialogue.py tools/dialogue.py assets/outcomes.py
+GEN     = src/generated/bank0_data.asm src/generated/bank1_data.asm src/generated/bank2_data.asm src/generated/bank3_data.asm src/generated/bank4_data.asm src/generated/bank5_data.asm src/generated/bank6_data.asm
 
 .PHONY: all assets run test mockups clean
 

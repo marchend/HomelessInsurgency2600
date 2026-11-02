@@ -15,8 +15,8 @@
 - [x] M1 City kernel (Stage A: walk the city)
 - [x] M2 NPC multiplexing (Stage B)
 - [x] M3 Encounter kernel + text (Stage B)
-- [ ] M4 Dialogue pipeline + odds
-- [ ] M5 Combat
+- [x] M4 Dialogue pipeline + odds (Stage C)
+- [x] M5 Combat (Stage C)
 - [ ] M6 Act 1 loop
 - [ ] M7 Sound and polish
 
@@ -38,3 +38,14 @@
 - 26 tests pass (frame timing every frame, per-section NPC x positions, greeting matches temperament, choices per kind, cursor limits, return to city).
 - Deferred: follower row (Stage D, needs recruits); bank 2 has 44 bytes left - encounter text moves to its own bank in Stage C.
 - Not verified: Stella screenshots (no capture access) - needs a play-test.
+
+## Stage C review (consequences)
+- Every choice rolls an outcome from assets/outcomes.py (odds per temperament, shifted by followers and heat): money, energy, heat, shelter tips, outskirts, fights. Passersby give change 1 in 20 at baseline.
+- Food places (stand by the sign): coffee $0.50 (+40 energy), meal $2.00 (+120), FEED CREW (per follower; Stage D), leave.
+- Fights (bank 4): side view, move/swing/block, energy bars in score mode, weapon + crew damage, opponent AI. Win vs cop: you get away; win a robbery: $3.00. Lose to a cop: arrested -> jail (fine $2.00, weapon lost, energy restored, heat halved, released at the start room). Lose a robbery: they flee, 30% the police come.
+- Yelling at police can get you beaten and dumped at the south edge (energy halved).
+- Three weapons lie in alleys (pipe, bat, board); walk into the alley and press fire.
+- Banks: 3 = encounter text + composer (called from the bank 2 kernel through same-address stubs), 4 = fights, 5 = encounter logic + odds tables. Screen changes needing bank 0 go through `pending`, handled in overscan.
+- Bugs caught by tests: branch after `ldy #0` (won fights ended in jail), signs unreachable on rooftops, VDEL leftovers above the fight footer.
+- 47 tests pass, including an exhaustive check of the outcome roller against the odds tables for every random value, choice and temperament.
+- Not verified: Stella screenshots - needs a play-test. Bank 0 has ~150 bytes left; Stage D logic should go in bank 5 / 7.

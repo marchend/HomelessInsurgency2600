@@ -309,6 +309,28 @@ class Atari:
         return frame
 
     # --- helpers for tests ------------------------------------------------
+    def call(self, addr, bank, a=0, x=0, y=0, max_steps=200000):
+        """Run the subroutine at `addr` in `bank` until it returns (unit tests)."""
+        mpu = self.mpu
+        self.bank = bank
+        sentinel = 0xFF00
+        ret = sentinel - 1
+        for byte in (ret >> 8, ret & 0xFF):
+            self[0x100 + mpu.sp] = byte
+            mpu.sp = (mpu.sp - 1) & 0xFF
+        mpu.pc, mpu.a, mpu.x, mpu.y = addr, a, x, y
+        for _ in range(max_steps):
+            if mpu.pc == sentinel:
+                return
+            self.step()
+        raise RuntimeError("subroutine did not return")
+
+    def rom_byte(self, addr, bank):
+        return self.rom[bank * 4096 + (addr & 0xFFF)]
+
+    def write_ram(self, addr, value):
+        self.ram[addr & 0x7F] = value & 0xFF
+
     def joystick(self, right=False, left=False, down=False, up=False, fire=False):
         v = 0xFF
         for bit, on in ((7, right), (6, left), (5, down), (4, up)):

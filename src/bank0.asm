@@ -11,6 +11,8 @@ SIGN_X      = 76
 NPC_X_MIN   = 8         ; the HMOVE border hides x < 8
 NPC_X_MAX   = 152
 TALK_DX     = 10        ; how close (pixels) the player must be to talk
+SIGN_NEAR_LO = 17       ; p0y range touching the middle band's building:
+SIGN_NEAR_HI = 51       ;   bottom of street 1 or top of street 2
 PORTRAIT_X0 = 44        ; encounter portraits
 PORTRAIT_X1 = 100
 ENERGY_MAX  = ENERGY_BLOCKS * 14
@@ -63,20 +65,30 @@ MainLoop
     lda screen
     cmp #SCREEN_CITY
     beq .vbCity
-    bcs .vbEnc
+    bcs .vbOther
     jsr TitleLogic
     jmp .vbPosition
 .vbCity
     jsr CityLogic
     jmp .vbPosition
-.vbEnc
-    jsr EncounterLogic
+.vbOther
+    cmp #SCREEN_FIGHT
+    beq .vbFight
+    CALL_FAR 5, EncounterLogic
+    jmp .vbPosition
+.vbFight
+    CALL_FAR 4, FightLogic
 .vbPosition             ; position sprites for whichever screen is next
     lda screen
     cmp #SCREEN_CITY
     beq .posCity
     bcc .vbWait
+    cmp #SCREEN_FIGHT
+    beq .posFight
     jsr PositionEncounterSprites
+    jmp .vbWait
+.posFight
+    jsr PositionFightSprites
     jmp .vbWait
 .posCity
     jsr PositionCitySprites
@@ -87,29 +99,33 @@ MainLoop
     lda screen
     cmp #SCREEN_CITY
     beq .kCity
-    bcs .kEnc
+    bcs .kOther
     CALL_FAR 6, TitleKernel
     jmp .overscan
 .kCity
     CALL_FAR 1, CityKernel
     jmp .overscan
-.kEnc
+.kOther
+    cmp #SCREEN_FIGHT
+    beq .kFight
     CALL_FAR 2, EncounterKernel
+    jmp .overscan
+.kFight
+    CALL_FAR 4, FightKernel
 
 .overscan
     lda #2
     sta VBLANK
     lda #OS_TIMER
     sta TIM64T
+    lda pending
+    beq .osScreen
+    jsr HandlePending
+    jmp .osWait
+.osScreen
     lda screen
     cmp #SCREEN_CITY
-    beq .osCity
-    bcs .osWait
-    lda startCity       ; title: fire was pressed, set up the city
-    beq .osWait
-    jsr CityInit
-    jmp .osWait
-.osCity
+    bne .osWait
     jsr CityOverscan
 .osWait
     lda INTIM
@@ -176,7 +192,8 @@ TitleLogic
     sta tcolor
     jsr FirePressed
     bcc .done
-    inc startCity       ; city setup is too slow for VBLANK: done in overscan
+    lda #PENDING_START_CITY ; city setup is too slow for VBLANK: done in overscan
+    sta pending
 .done
     rts
 
@@ -196,8 +213,6 @@ FirePressed
 ; ---------------------------------------------------------------------------
 CityInit
     SUBROUTINE
-    lda #0
-    sta startCity
     lda #SCREEN_CITY
     sta screen
     lda #START_ROOM
@@ -212,6 +227,11 @@ CityInit
     sta money
     sta money+1
     sta recruits
+    sta heat
+    sta weapon
+    sta itemsTaken
+    sta shelters
+    sta followers
     sta CXCLR
     lda #1
     sta hudDirty        ; composing text is too slow for VBLANK
@@ -251,15 +271,41 @@ CityLogic
     beq .still
     dec energy
 .still
+    lda frame           ; police heat cools down: 1 point per 64 frames
+    and #63
+    bne .warm
+    lda heat
+    beq .warm
+    dec heat
+.warm
     jsr SetEnergyBar
     jsr SetSpritePointers
-    jsr FirePressed     ; fire next to someone starts an encounter
+    jsr FirePressed     ; fire next to someone (or something) interacts
     bcc .done
     jsr FindNpcAtPlayer
     bcc .done
-    jmp EncounterInit
+    lda SC_R+SC_SLOT_KIND,x
+    cmp #KIND_ITEM
+    beq PickUp
+    stx encSlot
+    CALL_FAR 5, EncounterStart
 .done
     rts
+
+; X = slot holding a weapon: take it (replacing the one you carry).
+PickUp
+    SUBROUTINE
+    ldy SC_R+SC_SLOT_PERSON,x   ; weapon number 1-3
+    sty weapon
+    lda itemsTaken
+    ora ItemBit-1,y
+    sta itemsTaken
+    lda #KIND_NONE
+    sta SC_W+SC_SLOT_KIND,x
+    rts
+
+ItemBit
+    .byte 1, 2, 4
 
 ; Each move steps one unit and undoes it if the player would overlap a
 ; building; off the edge of the room it flips to the neighbouring room.
@@ -441,6 +487,66 @@ BandHit
     sec
     rts
 
+; Screen changes requested through `pending` (by bank 3, 4 or the title).
+HandlePending
+    SUBROUTINE
+    lda pending
+    ldx #PENDING_NONE
+    stx pending
+    cmp #PENDING_START_CITY
+    bne .notStart
+    jmp CityInit
+.notStart
+    cmp #PENDING_FIGHT
+    bne .notFight
+    CALL_FAR 4, FightInit
+    jmp ComposeFightFooter
+.notFight
+    cmp #PENDING_TELEPORT
+    bne .resume
+    jsr LoadRoom
+.resume
+    lda #1
+    sta hudDirty
+    lda #SCREEN_CITY
+    sta screen
+    jsr SetSpritePointers
+    jmp SetSlotSprites  ; the encounter / fight reused the slot pointers
+
+; Fight footer "WEAPN CREW N" into TXT1 (the HUD is recomposed afterwards).
+ComposeFightFooter
+    SUBROUTINE
+    lda weapon
+    sta ttmp
+    asl
+    asl
+    adc ttmp            ; weapon * 5
+    tax
+    ldy #0
+.name
+    lda WeaponGlyphs,x
+    sta hudStr,y
+    inx
+    iny
+    cpy #5
+    bne .name
+    ldx #0
+.crew
+    lda CrewGlyphs,x
+    sta hudStr,y
+    inx
+    iny
+    cpx #6
+    bne .crew
+    lda followers
+    jsr DigitGlyph
+    sta hudStr+11
+    lda #<hudStr
+    sta textPtr
+    lda #>hudStr
+    sta textPtr+1
+    jmp ComposeText
+
 ; Overscan: the new room's NPCs (on a room change) or the HUD text (when it
 ; changed), then NPC movement and sprite setup for the next frame.
 CityOverscan
@@ -592,6 +698,20 @@ SetupRoomNpcs
     tax
     lda PatAlleyX,x
     sta tLeft
+    lda RoomItem,y      ; a weapon nobody has picked up yet?
+    beq .noItem
+    tax
+    lda ItemBit-1,x
+    and itemsTaken
+    bne .noItem
+    stx SC_W+SC_SLOT_PERSON+2
+    lda #KIND_ITEM
+    sta SC_W+SC_SLOT_KIND+2
+    lda tLeft
+    sta SC_W+SC_SLOT_X+2
+    bne .slot4
+.noItem
+    ldy room
     lda RoomSlot2Person,y
     ldx #2
     jsr AlleySlot
@@ -742,13 +862,13 @@ SetSlotSprites
     bpl .slot
     rts
 
-; Carry set and X = slot if a person stands close enough to talk to.
+; Carry set and X = slot if someone or something is close enough to use.
 FindNpcAtPlayer
     SUBROUTINE
     ldx #4
 .slot
     lda SC_R+SC_SLOT_KIND,x
-    cmp #KIND_HOMELESS
+    cmp #KIND_FOOD      ; food places, people and weapons (not shelters yet)
     bcc .next
     lda p0x
     sec
@@ -759,6 +879,17 @@ FindNpcAtPlayer
 .abs
     cmp #TALK_DX
     bcs .next
+    lda SC_R+SC_SLOT_KIND,x
+    cmp #KIND_HOMELESS
+    bcs .person
+    lda p0y             ; a sign: stand in the street next to its building
+    cmp #SIGN_NEAR_LO
+    bcc .next
+    cmp #SIGN_NEAR_HI+1
+    bcs .next
+    sec
+    rts
+.person
     lda SlotY,x         ; rows overlap: p0y < slotY + 10 and slotY < p0y + 10
     clc
     adc #10
@@ -780,122 +911,8 @@ FindNpcAtPlayer
     rts
 
 ; ---------------------------------------------------------------------------
-; Encounter
+; Encounter and fight sprites (their logic lives in banks 3 and 4)
 ; ---------------------------------------------------------------------------
-
-; X = slot of the person the player talks to.
-EncounterInit
-    SUBROUTINE
-    stx encSlot
-    lda SC_R+SC_SLOT_KIND,x
-    sec
-    sbc #KIND_HOMELESS
-    sta encKind
-    bne .stranger
-    lda SC_R+SC_SLOT_PERSON,x   ; homeless: their fixed type
-    tay
-    lda SC_R+SC_PEOPLE,y
-    jmp .temp
-.stranger
-    jsr Random                  ; police / passerby: a fresh mood each time
-.temp
-    and #3
-    sta encTemp
-    lda encKind                 ; greeting pool = kind * 4 + temperament
-    asl
-    asl
-    ora encTemp
-    tax
-    jsr Random
-.mod
-    cmp GreetCount,x
-    bcc .pick
-    sbc GreetCount,x
-    bcs .mod
-.pick
-    clc
-    adc GreetStart,x
-    tay
-    lda GreetLine1,y
-    sta encStr
-    lda GreetLine2,y
-    sta encStr+1
-    ldx encKind
-    lda ChoiceCount,x
-    sta nChoices
-    txa
-    asl
-    asl
-    tax
-    ldy #0
-.choice
-    lda ChoiceTab,x
-    sta encStr+2,y
-    inx
-    iny
-    cpy #4
-    bne .choice
-    lda #0
-    sta cursor
-    lda #<PlayerSideGfx
-    sta encP0g
-    lda #>PlayerSideGfx
-    sta encP0g+1
-    lda #<PlayerSideCol
-    sta encP0c
-    lda #>PlayerSideCol
-    sta encP0c+1
-    ldx encKind
-    lda PortraitGfxLo,x
-    sta encP1g
-    lda PortraitGfxHi,x
-    sta encP1g+1
-    lda PortraitColLo,x
-    sta encP1c
-    lda PortraitColHi,x
-    sta encP1c+1
-    lda SWCHA
-    sta joyPrev
-    lda #SCREEN_ENCOUNTER
-    sta screen
-    rts
-
-; Up/down move the cursor; fire picks a choice. Stage B: every choice
-; just ends the conversation (outcomes come in Stage C).
-EncounterLogic
-    SUBROUTINE
-    jsr FirePressed
-    bcc .menu
-    lda #SCREEN_CITY
-    sta screen
-    lda #1
-    sta hudDirty
-    jsr SetSpritePointers
-    jmp SetSlotSprites  ; the encounter reused the slot pointers
-.menu
-    lda SWCHA
-    tax
-    eor #$FF            ; 1 = pushed now
-    and joyPrev         ; ... and not last frame
-    stx joyPrev
-    sta joy
-    and #$10            ; up
-    beq .notUp
-    lda cursor
-    beq .notUp
-    dec cursor
-.notUp
-    lda joy
-    and #$20            ; down
-    beq .done
-    lda cursor
-    clc
-    adc #1
-    cmp nChoices
-    bcs .done
-    sta cursor
-.done
-    rts
 
 PositionEncounterSprites
     SUBROUTINE
@@ -904,6 +921,29 @@ PositionEncounterSprites
     jsr PosObject0
     lda #PORTRAIT_X1
     ldx #1
+    jsr PosObject0
+    sta WSYNC
+    sta HMOVE           ; the kernel does HMCLR
+    rts
+
+; Fighters, the player's pipe (ball) and the opponent's swing (missile 1).
+PositionFightSprites
+    SUBROUTINE
+    lda fx0
+    ldx #0
+    jsr PosObject0
+    lda fx1
+    ldx #1
+    jsr PosObject0
+    lda fx0
+    clc
+    adc #16
+    ldx #4
+    jsr PosObject0
+    lda fx1
+    sec
+    sbc #4
+    ldx #3
     jsr PosObject0
     sta WSYNC
     sta HMOVE           ; the kernel does HMCLR
@@ -970,7 +1010,11 @@ UpdateHud
     jsr .digit
     sta hudStr+1,x
     rts
-.digit                  ; A = 0-9 -> glyph offset
+.digit
+    ; fall through
+
+; A = 0-9 -> glyph offset. Clobbers ttmp.
+DigitGlyph
     sta ttmp
     asl
     asl

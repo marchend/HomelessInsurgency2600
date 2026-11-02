@@ -74,3 +74,7 @@ PASSERBY_COLORS = {"A": c(15, 1), "S": SKIN_A, "W": c(0, 7), "J": c(10, 3),
                    "L": c(0, 3), "B": c(0, 0)}
 PERSON_COLORS = {"A": c(15, 1), "S": SKIN_B, "G": c(12, 4), "L": c(0, 2),
                  "B": c(0, 1)}
+
+# A weapon lying in an alley: a pipe, bat or board (one look for all).
+ITEM_TOP = ["......W.", ".....W..", "....W...", "...W....", "..W.....", ".W......"]
+ITEM_COLORS = {"W": (0, 5)}

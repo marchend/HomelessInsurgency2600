@@ -1,7 +1,7 @@
 ; Bank 2: encounter screen.
 ;
 ;   line  0       blank (screen on)
-;   lines 1-10    header word (HOMELESS / POLICE / PASSERBY) in playfield
+;   lines 1-10    header word (HOMELESS, POLICE, PASSERBY, FOOD, JAIL)
 ;   lines 11-70   scene: 30 rows of 2 lines, both portraits double width
 ;   lines 71-84   gap: sidewalk (3 lines), text players positioned, line 0
 ;                 composed
@@ -10,8 +10,9 @@
 ;   lines 190-191 blank
 ;
 ; Six lines of text don't fit in SuperChip RAM, so each line is composed into
-; one of two buffers (TXTA / TXTB) during the gap before it. The gaps are
-; timed with the RIOT timer, so the line count never depends on the text.
+; one of two buffers (TXTA / TXTB) during the gap before it, by bank 3 (which
+; holds the text) through COMPOSE_STUBS. The gaps are timed with the RIOT
+; timer, so the line count never depends on the text.
 
 TEXT_GAP     = 9                ; lines between text lines
 CURSOR_X     = TEXT_X - 6       ; ball marks the selected choice
@@ -207,15 +208,15 @@ EncounterKernel
     ldx #0
     jsr PrepareLine
     sta HMCLR
-    jsr ComposeA
+    jsr ComposeFarA2
     GAP_END
     jsr DrawTextA
 
-    TEXT_BLOCK 1, ComposeB, DrawTextB
-    TEXT_BLOCK 2, ComposeA, DrawTextA
-    TEXT_BLOCK 3, ComposeB, DrawTextB
-    TEXT_BLOCK 4, ComposeA, DrawTextA
-    TEXT_BLOCK 5, ComposeB, DrawTextB
+    TEXT_BLOCK 1, ComposeFarB2, DrawTextB
+    TEXT_BLOCK 2, ComposeFarA2, DrawTextA
+    TEXT_BLOCK 3, ComposeFarB2, DrawTextB
+    TEXT_BLOCK 4, ComposeFarA2, DrawTextA
+    TEXT_BLOCK 5, ComposeFarB2, DrawTextB
 
     sta WSYNC               ; 190
     TEXT_OFF
@@ -224,21 +225,16 @@ EncounterKernel
     sta WSYNC               ; first overscan line
     jmp BankReturn2
 
-; X = text line 0-5: clear the text players (the previous line's last
-; glyph row, or the portraits' last row, must not show in the gap), point
-; textPtr at the line's string, set its color, and turn the cursor (ball)
-; on for the selected choice.
+; X = text line 0-5 (kept for the composer): clear the text players (the
+; previous line's last glyph row, or the portraits' last row, must not show
+; in the gap), set the line's color, and turn the cursor (ball) on for the
+; selected choice.
 PrepareLine
     SUBROUTINE
     lda #0
     sta GRP0
     sta GRP1
     sta GRP0                ; twice: VDEL keeps a delayed copy
-    ldy encStr,x
-    lda StrLo,y
-    sta textPtr
-    lda StrHi,y
-    sta textPtr+1
     lda #COL_SPEECH
     ldy #0
     cpx #2
@@ -268,32 +264,15 @@ DrawTextB
     TEXT_KERNEL TXTB
     rts
 
-ComposeA
-    COMPOSE_COLUMN TXTA, 0, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTA, 1, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTA, 2, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTA, 3, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTA, 4, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTA, 5, EncFontHi, EncFontLo
-    rts
-
-ComposeB
-    COMPOSE_COLUMN TXTB, 0, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTB, 1, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTB, 2, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTB, 3, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTB, 4, EncFontHi, EncFontLo
-    COMPOSE_COLUMN TXTB, 5, EncFontHi, EncFontLo
-    rts
-
     POS_OBJECT_SUB PosObject2
 
-HdrBase
-    .byte 0, 5, 10
+HdrBase                     ; per encounter kind (ENC_*)
+    .byte 0, 5, 10, 15, 20
 SceneBase
-    .byte 0, SCENE_PAIRS, SCENE_PAIRS * 2
+    .byte 0, SCENE_PAIRS, SCENE_PAIRS * 2, SCENE_PAIRS * 3, SCENE_PAIRS * 4
 
     include "generated/bank2_data.asm"
 
-    ECHO "Bank 2 free:", ($FFE0 - *)d, "bytes"
+    ECHO "Bank 2 free:", ($FFC0 - *)d, "bytes"
+    COMPOSE_STUBS 2
     BANK_END 2
