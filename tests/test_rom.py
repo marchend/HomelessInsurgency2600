@@ -21,7 +21,9 @@ def setUpModule():
     subprocess.run(["make", "-s"], cwd=ROOT, check=True)
 
 
-class RomTest(unittest.TestCase):
+class RomCase(unittest.TestCase):
+    """Helpers for driving the ROM; no tests of its own."""
+
     def setUp(self):
         with open(ROM, "rb") as f:
             self.atari = Atari(f.read())
@@ -53,6 +55,15 @@ class RomTest(unittest.TestCase):
         os.makedirs(SNAP_DIR, exist_ok=True)
         frame.to_png(os.path.join(SNAP_DIR, name + ".png"))
 
+    def sc(self, name, offset=0):
+        """Read SuperChip RAM at symbol `name` (an offset) + offset."""
+        return self.atari.sc[self.sym[name] + offset]
+
+    def set_sc(self, name, offset, value):
+        self.atari.sc[self.sym[name] + offset] = value
+
+
+class RomTest(RomCase):
     # --- title ----------------------------------------------------------------
     def test_title_holds_steady_timing(self):
         frame = self.frames(70)

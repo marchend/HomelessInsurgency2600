@@ -13,8 +13,8 @@
 ## Build — plan: ~/.claude/plans/curried-hopping-sonnet.md (stages A-D, play-test after each)
 - [x] M0 Toolchain: DASM, Makefile, Stella, stable 262-line frame
 - [x] M1 City kernel (Stage A: walk the city)
-- [ ] M2 NPC multiplexing
-- [ ] M3 Encounter kernel + text
+- [x] M2 NPC multiplexing (Stage B)
+- [x] M3 Encounter kernel + text (Stage B)
 - [ ] M4 Dialogue pipeline + odds
 - [ ] M5 Combat
 - [ ] M6 Act 1 loop
@@ -29,3 +29,12 @@
 - Bugs caught by tests while building: first title line over budget (+1 line), VBLANK overrun when entering the city (HUD compose moved to overscan), PosObject overrun at large x (positioning moved into VBLANK), joystick bits clobbered by a shared temp (player bounced back after a room flip), fire held at power-on skipped the title.
 - Trade-offs vs mockup: building bands mirrored/repeated instead of fully asymmetric; no roof vents or edge shading yet; sprites move vertically in 2-line steps.
 - Not verified: Stella screenshots (no screen-capture access here) — needs a play-test.
+
+## Stage B review (meet people)
+- City: one NPC or sign per screen section (5 per room), P1 repositioned mid-screen; HMOVE every line (8-px black left border). 40 homeless placed by tools/build_assets.py (shelter rooms crowded, start room guaranteed one); empty streets get passersby/police at random. Walkers stroll the streets.
+- Encounter (bank 2): header word, portraits on a scene per kind, greeting picked from the speaker's temperament pool, up to 4 choices with a cursor. Fire ends the conversation (outcomes are Stage C).
+- Text: 6 lines composed into 2 alternating SuperChip buffers in RIOT-timed gaps. Strings stored as glyph offsets (not 5-bit packed: not needed yet, and faster to compose).
+- Timing fixes found by tests/profiling: VBLANK overrun (NPC work moved to overscan; table-driven positions), title->city setup moved to title overscan, HUD composer 4x faster, header line overrun, first text gap too short, VDEL leftovers drawing garbage.
+- 26 tests pass (frame timing every frame, per-section NPC x positions, greeting matches temperament, choices per kind, cursor limits, return to city).
+- Deferred: follower row (Stage D, needs recruits); bank 2 has 44 bytes left - encounter text moves to its own bank in Stage C.
+- Not verified: Stella screenshots (no capture access) - needs a play-test.

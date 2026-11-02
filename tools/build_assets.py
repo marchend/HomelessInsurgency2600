@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import sprites  # noqa: E402
 from font import FONT, PF_WIDE  # noqa: E402
 from rooms import parse_city, pattern_cols  # noqa: E402
+import build_dialogue  # noqa: E402
 
 OUT = os.path.join(ROOT, "src", "generated")
 
@@ -20,6 +21,12 @@ CHARSET = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ.,!?-$%'/:+"
 SCREEN_PAIRS = 78         # city map area: 156 lines as 78 line pairs
 SPRITE_PAD = 80           # zero rows around each sprite (pairs index -77..+77)
 ENERGY_BLOCKS = 18        # energy bar length in playfield blocks
+HOMELESS_COUNT = 40
+NO_PERSON = 0xFF
+# city NPC slots, one per screen section: 0 band A, 1 street 1, 2 band B,
+# 3 street 2, 4 band C. Bottom row (line pair) of a sprite in each slot.
+SLOT_Y = [67, 50, 34, 16, 1]
+ALLEY_SLOTS = (0, 2, 4)       # slots inside building bands (index into the room's bands)
 
 
 def col(hl):
@@ -80,7 +87,55 @@ class Asm:
 # bank 0: font, strings, rooms, energy bar
 # ---------------------------------------------------------------------------
 
-def build_bank0(patterns, rooms, start):
+def alley_x(mode, half):
+    """x of a sprite standing in the band's first vertical street (0 = none)."""
+    cols = pattern_cols(mode, half)
+    for c in range(40):
+        if not cols[c]:
+            return c * 4 + 4
+    return 0
+
+
+def place_homeless(patterns, rooms, start):
+    """Deterministically spread HOMELESS_COUNT people over rooms and slots.
+
+    Shelter rooms get a crowd (every free slot); the start room always has
+    one in its top street so there is someone to talk to right away; the rest
+    go one per room. Returns {(room, slot): person}.
+    """
+    import random
+    rnd = random.Random(2600)
+    flat = [room for row in rooms for room in row]
+
+    def free_slots(i):
+        r = flat[i]
+        out = [1, 3]
+        for slot, band in zip(ALLEY_SLOTS, r["bands"]):
+            if slot == 2 and r["sign"]:
+                continue
+            if alley_x(*patterns[band]):
+                out.append(slot)
+        return out
+
+    placed = {}
+    start_room = start[0] * 8 + start[1]
+    placed[(start_room, 1)] = len(placed)
+    for i, r in enumerate(flat):
+        if r["sign"] == "S":
+            for slot in free_slots(i):
+                if (i, slot) not in placed and len(placed) < HOMELESS_COUNT:
+                    placed[(i, slot)] = len(placed)
+    others = [i for i in range(64) if not any(k[0] == i for k in placed)]
+    rnd.shuffle(others)
+    for i in others:
+        if len(placed) == HOMELESS_COUNT:
+            break
+        placed[(i, rnd.choice(free_slots(i)))] = len(placed)
+    assert len(placed) == HOMELESS_COUNT
+    return placed
+
+
+def build_bank0(patterns, rooms, start, dialogue, placed):
     a = Asm("bank 0 data")
     # 4-pixel glyphs: FontHi holds the glyph in the high nibble, FontLo in the
     # low nibble, so a byte for two characters is FontHi[l] | FontLo[r].
@@ -93,14 +148,12 @@ def build_bank0(patterns, rooms, start):
     assert len(hi) <= 256
     a.table("FontHi", hi)
     a.table("FontLo", lo)
-    a.equ("CHAR_SPACE", CHARSET.index(" "))
-    a.equ("CHAR_0", CHARSET.index("0"))
-    a.equ("CHAR_DOLLAR", CHARSET.index("$"))
-    a.equ("CHAR_DOT", CHARSET.index("."))
-    a.equ("CHAR_SLASH", CHARSET.index("/"))
-    a.equ("CHAR_QUESTION", CHARSET.index("?"))
+    a.comment("glyph offsets (character code * 5), as the composer wants them")
+    for name, ch in (("SPACE", " "), ("0", "0"), ("DOLLAR", "$"), ("DOT", "."),
+                     ("SLASH", "/"), ("QUESTION", "?")):
+        a.equ(f"GLYPH_{name}", CHARSET.index(ch) * 5)
     for name, s in (("StrAct1", "ACT I: RALLY"), ("StrPressFire", "PRESS FIRE")):
-        a.table(name, text_codes(s))
+        a.table(name, [c * 5 for c in text_codes(s)])
 
     # building band patterns
     names = sorted(patterns)
@@ -121,6 +174,58 @@ def build_bank0(patterns, rooms, start):
     for i, band in enumerate("ABC"):
         a.table(f"RoomBand{band}", [names.index(r["bands"][i]) for r in flat])
     a.table("RoomSign", [{"": 0, "S": 1, "F": 2}[r["sign"]] for r in flat])
+    a.table("PatAlleyX", [alley_x(*patterns[n]) for n in names])
+    for slot in range(5):
+        a.table(f"RoomSlot{slot}Person", [placed.get((i, slot), NO_PERSON) for i in range(64)])
+    a.equ("HOMELESS_COUNT", HOMELESS_COUNT)
+    a.equ("NO_PERSON", NO_PERSON)
+    a.table("SlotY", SLOT_Y)
+    # mid-screen P1 reposition (bank1 REPOSITION_B): delay loop count and
+    # fine motion for each x; coarse 1-10 puts RESP1 at x = 15 * coarse
+    coarse, fine = [], []
+    for x in range(160):
+        c = min(10, max(1, (x + 7) // 15))
+        off = 15 * c - x                    # positive = HMOVE moves left
+        assert -8 <= off <= 7 or x < 8 or x > 158, x
+        off = max(-8, min(7, off))
+        coarse.append(c)
+        fine.append((off & 0xF) << 4)
+    a.table("SlotCoarseTab", coarse)
+    a.table("SlotFineTab", fine)
+
+    # sprite base addresses per slot kind (see KIND_* in ram.h); signs, people
+    kinds = ["Blank", "Shelter", "Food", "Homeless", "Police", "Passerby"]
+    a.label("KindGfxLo")
+    a.lines.append("    .byte " + ",".join(f"<{k}Gfx" for k in kinds))
+    a.label("KindGfxHi")
+    a.lines.append("    .byte " + ",".join(f">{k}Gfx" for k in kinds))
+    a.label("KindColLo")
+    a.lines.append("    .byte " + ",".join(f"<{k}Col" for k in kinds))
+    a.label("KindColHi")
+    a.lines.append("    .byte " + ",".join(f">{k}Col" for k in kinds))
+
+    # encounter text: greeting pools by kind*4 + temperament, choices by kind
+    strings, greet, choices = dialogue
+    a.table("GreetStart", greet["start"])
+    a.table("GreetCount", greet["count"])
+    a.table("GreetLine1", greet["line1"])
+    a.table("GreetLine2", greet["line2"])
+    tab, counts = [], []
+    for kind in build_dialogue.KINDS:
+        ids = choices[kind]
+        counts.append(len(ids))
+        tab += ids + [0] * (4 - len(ids))
+    a.table("ChoiceTab", tab)
+    a.table("ChoiceCount", counts)
+    portraits = ["Homeless", "Cop", "Passerby"]
+    a.label("PortraitGfxLo")
+    a.lines.append("    .byte " + ",".join(f"<{k}SideGfx" for k in portraits))
+    a.label("PortraitGfxHi")
+    a.lines.append("    .byte " + ",".join(f">{k}SideGfx" for k in portraits))
+    a.label("PortraitColLo")
+    a.lines.append("    .byte " + ",".join(f"<{k}SideCol" for k in portraits))
+    a.label("PortraitColHi")
+    a.lines.append("    .byte " + ",".join(f">{k}SideCol" for k in portraits))
     a.equ("START_ROOM", start[0] * 8 + start[1])
     # roof colors per (map row + band) & 7: brick, concrete, teal, slate...
     a.table("BandColors", [col(c) for c in
@@ -160,6 +265,9 @@ def build_bank1():
         ("Player", sprites.PLAYER_TOP, sprites.PLAYER_COLORS),
         ("Shelter", sprites.SIGN_SHELTER, {"W": (10, 7)}),
         ("Food", sprites.SIGN_FOOD, {"F": (0, 6), "M": (2, 5)}),
+        ("Homeless", sprites.HOMELESS_TOP, sprites.HOMELESS_COLORS),
+        ("Police", sprites.POLICE_TOP, sprites.POLICE_COLORS),
+        ("Passerby", sprites.PERSON_TOP, sprites.PERSON_COLORS),
     ]
     a.comment("Each sprite has SPRITE_PAD zero rows on both sides so the kernel")
     a.comment("can index (ptr),y for every line pair without a range check.")
@@ -176,8 +284,10 @@ def build_bank1():
         _, cols = sprite_rows(art, colors)
         a.table(f"{name}Col", cols)
         a.bytes([0] * SPRITE_PAD)
-    a.equ("BlankGfx", "GfxStart")
-    a.equ("BlankCol", "ColStart")
+    # an empty slot points into the middle of the leading zero pad, so any
+    # slot's line range reads zeros
+    a.equ("BlankGfx", f"GfxStart+{SPRITE_PAD // 2}")
+    a.equ("BlankCol", f"ColStart+{SPRITE_PAD // 2}")
 
     # background per line pair, indexed by pair (77 = top of screen)
     asphalt, sidewalk = col((0, 1)), col((0, 3))
@@ -253,11 +363,108 @@ def build_bank6():
     a.save("bank6_data.asm")
 
 
+# ---------------------------------------------------------------------------
+# bank 2: encounter screen
+# ---------------------------------------------------------------------------
+
+SCENE_PAIRS = 31              # 30 portrait rows + 1 ground pair
+
+
+def scene_rows(kind):
+    """Per line pair (top to bottom): background, PF color, PF0-2 for a scene."""
+    rows = []
+    for i in range(SCENE_PAIRS):
+        bk, pfc, half = 0, 0, "." * 20
+        if i == SCENE_PAIRS - 1:
+            bk = col((0, 3))                                  # sidewalk
+        elif kind == "homeless":                              # brick alley wall
+            course = i // 3
+            if i % 3 == 2:
+                bk = col((3, 3))                              # mortar
+            else:
+                bk, pfc = col((3, 1)), col((3, 3))
+                half = ("#......." * 3)[:20] if course % 2 == 0 else ("....#..." * 3)[:20]
+        elif kind == "police":                                # night street
+            if i < 12:
+                bk = col((8, 0))
+                if i >= 6:
+                    half, pfc = "###....#####..######", col((0, 1))
+            else:
+                bk = col((0, 1))
+        else:                                                 # shop front by day
+            if i < 8:
+                bk = col((9, 5))
+            elif i < 11:
+                bk = col((4, 3)) if i % 2 == 0 else col((0, 7))
+            else:
+                bk = col((15, 3))
+                if 13 <= i <= 26:
+                    half, pfc = "............########", col((10, 6))
+        rows.append((bk, pfc) + half_to_pf([ch == "#" for ch in half]))
+    return rows
+
+
+def build_bank2(dialogue):
+    strings, _, _ = dialogue
+    a = Asm("bank 2 data")
+    hi, lo = [], []
+    for ch in CHARSET:
+        for row in FONT[ch]:
+            bits = sum(1 << (2 - i) for i, b in enumerate(row) if b == "#")
+            hi.append(bits << 5)
+            lo.append(bits << 1)
+    a.table("EncFontHi", hi)
+    a.table("EncFontLo", lo)
+
+    a.comment("screen lines as glyph offsets (character code * 5)")
+    for sid in range(len(strings.lines)):
+        a.comment(f"{sid}: '{strings.lines[sid]}'")
+        a.table(f"Str{sid}", strings.glyph_offsets(sid))
+    a.label("StrLo")
+    a.lines.append("    .byte " + ",".join(f"<Str{i}" for i in range(len(strings.lines))))
+    a.label("StrHi")
+    a.lines.append("    .byte " + ",".join(f">Str{i}" for i in range(len(strings.lines))))
+
+    # header words in playfield letters, asymmetric: 5 rows per kind
+    regs = []
+    for kind in build_dialogue.KINDS:
+        for row in pf_word(build_dialogue.HEADERS[kind], wide="M"):
+            regs.append(row_to_pf([ch == "#" for ch in row]))
+    for i, name in enumerate(("HdrPF0L", "HdrPF1L", "HdrPF2L", "HdrPF0R", "HdrPF1R", "HdrPF2R")):
+        a.table(name, [r[i] for r in regs])
+    a.table("HdrColor", [col(c) for c in [(0, 5), (9, 5), (12, 5)]])
+
+    scenes = [scene_rows(k) for k in build_dialogue.KINDS]
+    for i, name in enumerate(("SceneBK", "ScenePFC", "ScenePF0", "ScenePF1", "ScenePF2")):
+        a.table(name, [r[i] for sc in scenes for r in sc])
+    a.table("SceneCtrl", [0, 0, 1])    # shop window is mirrored
+    a.equ("SCENE_PAIRS", SCENE_PAIRS)
+
+    portraits = [
+        ("PlayerSide", sprites.PLAYER_SIDE, sprites.PLAYER_COLORS),
+        ("HomelessSide", sprites.HOMELESS_SIDE, sprites.HOMELESS_COLORS),
+        ("CopSide", sprites.COP_SIDE, sprites.POLICE_COLORS),
+        ("PasserbySide", sprites.PASSERBY_SIDE, sprites.PASSERBY_COLORS),
+    ]
+    for name, art, colors in portraits:
+        assert len(art) == 30, name
+        gfx, cols = sprite_rows(art, colors)
+        a.table(f"{name}Gfx", gfx)
+        a.table(f"{name}Col", cols)
+    a.equ("COL_SPEECH", col((0, 7)))
+    a.equ("COL_CHOICE", col((0, 3)))
+    a.equ("COL_SELECT", col((1, 6)))
+    a.save("bank2_data.asm")
+
+
 def main():
     with open(os.path.join(ROOT, "assets", "rooms", "city.txt")) as f:
         patterns, rooms, start = parse_city(f.read())
-    build_bank0(patterns, rooms, start)
+    dialogue = build_dialogue.build()
+    placed = place_homeless(patterns, rooms, start)
+    build_bank0(patterns, rooms, start, dialogue, placed)
     build_bank1()
+    build_bank2(dialogue)
     build_bank6()
 
 

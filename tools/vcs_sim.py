@@ -163,6 +163,7 @@ class Atari:
         self.wsync = False
         self.render_pos = 0             # color clock up to which pixels are drawn
         self.lines = {}                 # absolute line -> bytearray(160) of color bytes
+        self.p1_pos = {}                # absolute line -> P1 x at the start of the line
         self.vblank_lines = set()
         self.vsync_on = False
         self.frame_starts = []
@@ -266,6 +267,7 @@ class Atari:
             buf = self.lines.get(line)
             if buf is None:
                 buf = self.lines[line] = bytearray(160)
+                self.p1_pos[line] = tia.pos["P1"]
             blanked = tia.reg[0x01] & 2
             if blanked:
                 self.vblank_lines.add(line)
@@ -302,6 +304,7 @@ class Atari:
         frame = Frame(self, first, last)
         for ln in [k for k in self.lines if k < first]:
             del self.lines[ln]
+            self.p1_pos.pop(ln, None)
         self.vblank_lines = {ln for ln in self.vblank_lines if ln >= first}
         return frame
 
@@ -322,9 +325,11 @@ class Frame:
     def __init__(self, atari, first, last):
         self.total_lines = last - first
         self.rows = []
+        self.p1_pos = []
         for ln in range(first, last):
             if ln not in atari.vblank_lines and ln in atari.lines:
                 self.rows.append(bytes(atari.lines[ln]))
+                self.p1_pos.append(atari.p1_pos.get(ln))
         self.visible_lines = len(self.rows)
 
     def to_png(self, path, scale_x=5, scale_y=3):

@@ -92,3 +92,31 @@ KERNEL_SETUP_LINES = 4  ; lines every kernel spends (VBLANK on) before line 0
         sta COLUP0
         sta COLUP1
     ENDM
+
+    ; Compose two characters of a 12-character line at (textPtr) into
+    ; column {2} of SuperChip buffer {1}. The line holds glyph offsets
+    ; (character code * 5); font tables {3}/{4} hold glyph rows in the high /
+    ; low nibble. About 80 cycles per column.
+    MAC COMPOSE_COLUMN  ; {1} = buffer, {2} = column 0-5, {3} = FontHi, {4} = FontLo
+        ldy #{2} * 2
+        lda (textPtr),y
+        tax
+        iny
+        lda (textPtr),y
+        tay
+        lda {3}+0,x
+        ora {4}+0,y
+        sta SC_W+{1}+{2}*5+0
+        lda {3}+1,x
+        ora {4}+1,y
+        sta SC_W+{1}+{2}*5+1
+        lda {3}+2,x
+        ora {4}+2,y
+        sta SC_W+{1}+{2}*5+2
+        lda {3}+3,x
+        ora {4}+3,y
+        sta SC_W+{1}+{2}*5+3
+        lda {3}+4,x
+        ora {4}+4,y
+        sta SC_W+{1}+{2}*5+4
+    ENDM
